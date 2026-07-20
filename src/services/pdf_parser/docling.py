@@ -23,7 +23,7 @@ class DoclingParser:
         :param do_table_structure: Extract table structures (default: True)
         """
         # Determine if we should bypass Docling and use a lightweight parser instead (to save RAM in containers)
-        self.use_lightweight = os.environ.get("PDF_PARSER__USE_LIGHTWEIGHT_PARSER", "false").lower() == "true"
+        self.use_lightweight = os.environ.get("PDF_PARSER__USE_LIGHTWEIGHT_PARSER", "true").lower() == "true"
         self.max_pages = max_pages
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
         self._warmed_up = False
