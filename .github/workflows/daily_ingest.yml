@@ -1,0 +1,50 @@
+name: Daily arXiv Paper Ingestion
+
+on:
+  schedule:
+    # Run once every 24 hours at 6:00 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    # Allows manual trigger of the pipeline from the GitHub UI
+
+jobs:
+  ingest:
+    name: Check and Index Daily Papers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install UV Package Manager
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install Project Dependencies
+        run: |
+          uv sync --frozen
+
+      - name: Run Daily Ingestion Script
+        env:
+          # Database Connection
+          POSTGRES_DATABASE_URL: ${{ secrets.POSTGRES_DATABASE_URL }}
+          
+          # Vector Store Provider & API Keys
+          VECTOR_DB_PROVIDER: pinecone
+          PINECONE__API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE__INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
+          PINECONE__ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
+          
+          # Embedding API Key
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          
+          # Lightweight parser config
+          PDF_PARSER__USE_LIGHTWEIGHT_PARSER: "true"
+        run: |
+          uv run python scripts/daily_ingest.py

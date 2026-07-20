@@ -1,0 +1,34 @@
+services:
+  # ── RAG API (FastAPI) ──────────────────────────────────────────────────────
+  - type: web
+    name: rag-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free # Use Render's free tier
+    region: ohio
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: PROVIDER
+        value: openai
+      - key: OPENAI_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: OPENAI_MODEL
+        value: llama-3.3-70b-versatile
+      - key: OPENAI_API_KEY
+        sync: false # User enters their Groq API Key in the Render dashboard
+      - key: VECTOR_DB_PROVIDER
+        value: pinecone
+      - key: PINECONE__API_KEY
+        sync: false # User enters their Pinecone API Key in the Render dashboard
+      - key: PINECONE__INDEX_NAME
+        value: arxiv-papers
+      - key: PINECONE__ENVIRONMENT
+        value: us-east-1
+      - key: JINA_API_KEY
+        sync: false # User enters their Jina API Key in the Render dashboard
+      - key: POSTGRES_DATABASE_URL
+        sync: false # User enters their Neon PostgreSQL URL in the Render dashboard

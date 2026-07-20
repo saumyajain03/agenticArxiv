@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instant Indexer - Agentic arXiv</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: #eff6ff;
+            --background: #f8fafc;
+            --text-main: #0f172a;
+            --text-secondary: #475569;
+            --border: #e2e8f0;
+            --border-active: #bfdbfe;
+            --card-bg: #ffffff;
+            --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Dark Mode variables */
+        body.dark-theme {
+            --background: #0b0f19;
+            --text-main: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #1e293b;
+            --border-active: #3b82f6;
+            --card-bg: #111827;
+            --primary-light: rgba(37, 99, 235, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--background);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            transition: background 0.3s, color 0.3s;
+            position: relative;
+        }
+
+        /* Decorative Background Shapes */
+        .decor-shape {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            z-index: -1;
+            opacity: 0.45;
+            transition: all 0.5s ease;
+        }
+
+        .shape-left {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(37, 99, 235, 0.2) 0%, rgba(37, 99, 235, 0) 70%);
+            top: -150px;
+            left: -150px;
+        }
+
+        .shape-right {
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.12) 0%, rgba(236, 72, 153, 0) 75%);
+            top: 20%;
+            right: -200px;
+        }
+
+        /* Navbar Layout */
+        .larka-navbar {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        .navbar-logo {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: var(--text-main);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            letter-spacing: -0.5px;
+        }
+
+        .navbar-logo span {
+            color: var(--primary);
+            margin-left: 2px;
+        }
+
+        .navbar-links {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.04);
+            padding: 5px;
+            border-radius: 30px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.02), 0 2px 5px rgba(0, 0, 0, 0.01);
+        }
+
+        body.dark-theme .navbar-links {
+            background: #111827;
+            border-color: rgba(255,255,255,0.05);
+        }
+
+        .nav-link {
+            text-decoration: none;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            font-weight: 600;
+            padding: 8px 18px;
+            border-radius: 20px;
+            transition: var(--transition);
+        }
+
+        .nav-link:hover {
+            color: var(--text-main);
+        }
+
+        .nav-link.active {
+            background: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .navbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .theme-toggle-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+
+        .theme-toggle-btn:hover {
+            border-color: var(--text-main);
+            color: var(--text-main);
+        }
+
+        .btn-try-now {
+            background: var(--text-main);
+            color: var(--background);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .btn-try-now:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        /* Main Container */
+        main {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 24px;
+        }
+
+        .glass-card {
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            border: 1px solid rgba(37, 99, 235, 0.08);
+            box-shadow: 0 20px 50px rgba(37, 99, 235, 0.04);
+            animation: slideUp 0.4s ease-out;
+            transition: var(--transition);
+        }
+
+        body.dark-theme .glass-card {
+            background: rgba(17, 24, 39, 0.7);
+            border-color: rgba(37, 99, 235, 0.15);
+        }
+
+        .ingest-form h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 12px;
+        }
+
+        .ingest-form p {
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .ingest-input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .ingest-input {
+            flex-grow: 1;
+            padding: 14px 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .ingest-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+        }
+
+        .ingest-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+
+        .ingest-btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        /* Ingest Status styling */
+        .status-message {
+            margin-top: 20px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            padding: 14px;
+            border-radius: 12px;
+            display: none;
+            text-align: left;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .status-message.success {
+            background: rgba(46, 125, 50, 0.1);
+            color: #2e7d32;
+            border: 1px solid rgba(46, 125, 50, 0.2);
+            display: block;
+        }
+
+        .status-message.error {
+            background: rgba(198, 40, 40, 0.1);
+            color: #c62828;
+            border: 1px solid rgba(198, 40, 40, 0.2);
+            display: block;
+        }
+
+        .status-message.loading {
+            background: var(--primary-light);
+            color: var(--primary);
+            border: 1px solid var(--border-active);
+            display: block;
+        }
+
+        /* Footer */
+        footer {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 40px 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            z-index: 10;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Decorative Floating 3D Background Shapes -->
+    <div class="decor-shape shape-left"></div>
+    <div class="decor-shape shape-right"></div>
+
+    <header class="larka-navbar">
+        <div class="navbar-logo" onclick="window.location.href='/'">arXiv <span>Agent</span></div>
+        <div class="navbar-links">
+            <a href="/" class="nav-link">Deep Research</a>
+            <a href="/indexer" class="nav-link active">Instant Indexer</a>
+            <a href="https://github.com/saumyajain03/arXivAgent" target="_blank" class="nav-link">GitHub</a>
+        </div>
+        <div class="navbar-actions"></div>
+    </header>
+
+    <main>
+        <div class="glass-card">
+            <div class="ingest-form">
+                <h2>Index Any Research Paper Instantly</h2>
+                <p>Input any arXiv ID (e.g. 1706.03762). The RAG backend will download, parse, and index the entire paper in 15 seconds.</p>
+                
+                <div class="ingest-input-group">
+                    <input type="text" id="arxiv-id-input" class="ingest-input" placeholder="e.g. 1706.03762" onkeydown="handleIngestKey(event)">
+                    <button class="ingest-btn" onclick="runIngestion()">Start Indexing</button>
+                </div>
+                <div id="ingest-status" class="status-message"></div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>© 2026 arXiv Agentic RAG. Designed for Free cloud deployment via Pinecone Serverless and GitHub Actions.</p>
+    </footer>
+
+    <script>
+        // Auto-focus input on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('arxiv-id-input')?.focus();
+            
+            // Set initial theme based on localStorage
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.body.classList.add('dark-theme');
+            }
+        });
+
+
+
+        // Enter key submission handler
+        function handleIngestKey(event) {
+            if (event.key === 'Enter') {
+                runIngestion();
+            }
+        }
+
+        // Ingestion Flow
+        async function runIngestion() {
+            const input = document.getElementById('arxiv-id-input');
+            const id = input.value.trim();
+            const statusDiv = document.getElementById('ingest-status');
+            
+            if (!id) return;
+
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `Connecting to arXiv API to fetch and parse paper ${id}...`;
+
+            try {
+                const response = await fetch('/api/v1/ingest/arxiv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ arxiv_id: id })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Successfully indexed paper ${id}! Generated and indexed ${data.chunks_indexed} semantic chunk embeddings to the vector database.`;
+                    input.value = '';
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = `Error: ${data.error || 'Failed to process paper.'}`;
+                }
+            } catch (err) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = `Network Error: ${err.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

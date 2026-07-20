@@ -1,0 +1,1876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Research Agent</title>
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-base: #f8faff;
+            --bg-card: rgba(255, 255, 255, 0.9);
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: rgba(37, 99, 235, 0.06);
+            --text-main: #111111;
+            --text-secondary: #5f5e6a;
+            --border: rgba(37, 99, 235, 0.08);
+            --border-active: rgba(37, 99, 235, 0.25);
+            --shadow-sm: 0 4px 12px rgba(37, 99, 235, 0.04);
+            --shadow-md: 0 12px 35px rgba(37, 99, 235, 0.08);
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: linear-gradient(135deg, #e0ebff 0%, #ffffff 50%, #f0f5ff 100%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Subtle blue-tinted dot matrix grid background overlay */
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: radial-gradient(rgba(37, 99, 235, 0.05) 1.5px, transparent 1.5px);
+            background-size: 24px 24px;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Decorative Floating 3D Glossy Background Shapes */
+        .decor-shape {
+            position: absolute;
+            border-radius: 150px;
+            filter: blur(40px);
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0.65;
+            animation: float-slow 15s infinite alternate ease-in-out;
+        }
+
+        .shape-left {
+            width: 320px;
+            height: 600px;
+            background: linear-gradient(150deg, rgba(37, 99, 235, 0.15), rgba(96, 165, 250, 0.5));
+            left: -100px;
+            top: 15%;
+            transform: rotate(-15deg);
+        }
+
+        .shape-right {
+            width: 300px;
+            height: 550px;
+            background: linear-gradient(150deg, rgba(96, 165, 250, 0.4), rgba(37, 99, 235, 0.15));
+            right: -100px;
+            top: 20%;
+            transform: rotate(20deg);
+            animation-delay: -7s;
+        }
+
+        @keyframes float-slow {
+            0% { transform: translateY(0) rotate(0deg); }
+            100% { transform: translateY(-20px) rotate(5deg); }
+        }
+
+        /* Header design */
+        header {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 40px 24px 20px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-group h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: -0.5px;
+        }
+
+        .logo-group h1 span {
+            font-family: 'Lora', 'Playfair Display', Georgia, serif;
+            color: var(--primary);
+            font-weight: 600;
+            font-style: italic;
+        }
+
+        .logo-group p {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.03);
+            padding: 4px;
+            border-radius: 30px;
+            border: 1px solid var(--border);
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: var(--text-main);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Main layout grid */
+        main {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 24px 60px 24px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        /* Card panels */
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            box-shadow: var(--shadow-md);
+            transition: var(--transition);
+        }
+
+        .glass-card:hover {
+            border-color: var(--border-active);
+        }
+
+        /* Tab panels */
+        .tab-panel {
+            display: none;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Search input panel */
+        .search-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 18px 60px 18px 24px;
+            border-radius: 50px;
+            border: 1.5px solid var(--border);
+            background: white;
+            font-size: 1.1rem;
+            font-family: inherit;
+            color: var(--text-main);
+            outline: none;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+        }
+
+        .search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--primary-light);
+        }
+
+        .search-btn {
+            position: absolute;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+
+        .search-btn:hover {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+        }
+
+        .search-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.5;
+        }
+
+        .tag-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tag-badge {
+            background: rgba(0, 0, 0, 0.03);
+            border: 1px solid var(--border);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .tag-badge:hover {
+            background: var(--primary-light);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        /* Flowchart Stepper Styles */
+        .stepper-container {
+            margin-top: 10px;
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .stepper-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--primary);
+            text-align: center;
+        }
+
+        .steps-wrapper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            padding: 10px 0;
+            overflow-x: auto;
+        }
+
+        .steps-line {
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 2px;
+            background: var(--border);
+            z-index: 1;
+            transform: translateY(-50%);
+        }
+
+        .step-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+            z-index: 2;
+            width: 14%;
+            min-width: 100px;
+        }
+
+        .step-dot {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            transition: var(--transition);
+        }
+
+        .step-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        /* Active / Success Step states */
+        .step-node.active .step-dot {
+            border-color: var(--primary);
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 0 12px var(--primary);
+            animation: pulse-step 1.5s infinite ease-in-out;
+        }
+
+        .step-node.active .step-label {
+            color: var(--primary);
+        }
+
+        .step-node.completed .step-dot {
+            border-color: #2e7d32;
+            background: #2e7d32;
+            color: white;
+        }
+
+        .step-node.completed .step-label {
+            color: #2e7d32;
+        }
+
+        /* Results Display */
+        .results-wrapper {
+            display: none;
+            flex-direction: column;
+            gap: 30px;
+            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 16px;
+        }
+
+        .results-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .export-btn {
+            background: none;
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: var(--transition);
+        }
+
+        .export-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .review-section {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .review-section h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            color: var(--primary);
+            margin-bottom: 12px;
+            border-bottom: 1px dashed rgba(255, 95, 56, 0.2);
+            padding-bottom: 8px;
+        }
+
+        .review-section p {
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #3e3e3e;
+            text-align: justify;
+        }
+
+        /* Citation links formatting */
+        .citation-ref {
+            display: inline-block;
+            background: var(--primary-light);
+            color: var(--primary);
+            border: 1.5px solid rgba(255, 95, 56, 0.2);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-decoration: none;
+            margin: 0 2px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .citation-ref:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .sources-panel {
+            margin-top: 20px;
+        }
+
+        .sources-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.2rem;
+            margin-bottom: 12px;
+            color: var(--text-main);
+        }
+
+        .sources-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .source-card {
+            background: white;
+            border: 1px solid var(--border);
+            padding: 14px 20px;
+            border-radius: var(--radius-md);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .source-details h4 {
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .source-details p {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .source-link-btn {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .source-link-btn:hover {
+            text-decoration: underline;
+        }
+
+        /* Tab panel 2: Ingest container */
+        .ingest-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 500px;
+            margin: 0 auto;
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .ingest-form h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .ingest-input {
+            width: 100%;
+            padding: 14px 20px;
+            border-radius: 8px;
+            border: 1.5px solid var(--border);
+            font-size: 1rem;
+            outline: none;
+            text-align: center;
+        }
+
+        .ingest-input:focus {
+            border-color: var(--primary);
+        }
+
+        .ingest-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .ingest-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .status-message {
+            margin-top: 20px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status-message.success {
+            background: rgba(46, 125, 50, 0.1);
+            color: #2e7d32;
+            border: 1px solid rgba(46, 125, 50, 0.2);
+            display: block;
+        }
+
+        .status-message.error {
+            background: rgba(198, 40, 40, 0.1);
+            color: #c62828;
+            border: 1px solid rgba(198, 40, 40, 0.2);
+            display: block;
+        }
+
+        .status-message.loading {
+            background: var(--primary-light);
+            color: var(--primary);
+            border: 1px solid var(--border-active);
+            display: block;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse-step {
+            0% { box-shadow: 0 0 0 0 rgba(255, 95, 56, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 95, 56, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 95, 56, 0); }
+        }
+
+        /* Larka Header Navigation styling */
+        .larka-navbar {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px 24px 10px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 100;
+        }
+
+        .navbar-logo {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #111111;
+            letter-spacing: -0.5px;
+            cursor: pointer;
+        }
+
+        .navbar-logo span {
+            font-family: 'Lora', 'Playfair Display', Georgia, serif;
+            font-style: italic;
+            font-weight: 500;
+            color: var(--primary);
+        }
+
+        .navbar-links {
+            display: flex;
+            gap: 28px;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(8px);
+            padding: 8px 24px;
+            border-radius: 30px;
+            border: 1px solid rgba(37, 99, 235, 0.08);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.01);
+        }
+
+        .nav-link {
+            text-decoration: none;
+            color: #555566;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: var(--transition);
+        }
+
+        .nav-link:hover, .nav-link.active {
+            color: var(--primary);
+        }
+
+        .navbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .theme-toggle-btn {
+            background: none;
+            border: none;
+            color: #555566;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: var(--transition);
+        }
+
+        .theme-toggle-btn:hover {
+            color: var(--primary);
+        }
+
+        .btn-try-now {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.88rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.2);
+        }
+
+        .btn-try-now:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1.5px);
+            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.3);
+        }
+
+        /* Hero & Search Larka Layout styling */
+        .hero-larka-section {
+            text-align: center;
+            padding: 80px 20px 40px 20px;
+            max-width: 900px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .top-hub-badge {
+            background: #ffffff;
+            color: var(--primary);
+            border: 1px solid rgba(37, 99, 235, 0.15);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.02);
+        }
+
+        .hero-larka-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3.8rem;
+            font-weight: 700;
+            color: #1a1a24;
+            line-height: 1.15;
+            letter-spacing: -1.5px;
+            margin-bottom: 20px;
+        }
+
+        .hero-larka-title span.italic-serif {
+            font-family: 'Lora', 'Playfair Display', Georgia, serif;
+            font-style: italic;
+            font-weight: 500;
+        }
+
+        .hero-larka-title span.blue-text {
+            color: var(--primary);
+        }
+
+        .hero-larka-subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            line-height: 1.65;
+            max-width: 650px;
+            margin: 0 auto 30px auto;
+        }
+
+        .btn-larka-action {
+            background: var(--primary);
+            color: white !important;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 25px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-larka-action:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+        }
+
+        /* Larka Search Pill styling */
+        .search-larka-wrapper {
+            max-width: 800px;
+            width: 100%;
+            margin: 40px auto 20px auto;
+        }
+
+        .search-larka-bar {
+            background: #ffffff;
+            border: 1px solid rgba(37, 99, 235, 0.12);
+            border-radius: 50px;
+            padding: 10px 12px 10px 24px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 15px 35px rgba(37, 99, 235, 0.05), 0 2px 10px rgba(0, 0, 0, 0.01);
+            transition: var(--transition);
+        }
+
+        .search-larka-bar:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 18px 45px rgba(37, 99, 235, 0.1);
+        }
+
+        .larka-sparkle {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .search-larka-input {
+            flex-grow: 1;
+            border: none;
+            outline: none;
+            font-family: inherit;
+            font-size: 1.05rem;
+            color: var(--text-main);
+            background: transparent;
+            padding: 0 16px;
+        }
+
+        .search-larka-input::placeholder {
+            color: #b0b0c0;
+        }
+
+        .search-larka-submit {
+            background: var(--primary);
+            color: white;
+            border: none;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+            flex-shrink: 0;
+        }
+
+        .search-larka-submit:hover {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+        }
+
+        .search-larka-settings {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-top: 15px;
+            font-size: 0.85rem;
+        }
+
+        .settings-larka-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #555566;
+        }
+
+        .settings-larka-select {
+            border: none;
+            background: none;
+            outline: none;
+            font-family: inherit;
+            font-weight: 700;
+            color: var(--primary);
+            cursor: pointer;
+            padding-right: 12px;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right center;
+        }
+
+        .settings-larka-subtext {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-left: 4px;
+        }
+
+        /* Real-Time RAG Console Panel */
+        .rag-console-panel {
+            display: none;
+            background: #ffffff;
+            border: 1px solid rgba(37, 99, 235, 0.15);
+            border-radius: 16px;
+            max-width: 800px;
+            width: 100%;
+            margin: 30px auto 0 auto;
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.04);
+            overflow: hidden;
+            text-align: left;
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .rag-console-header {
+            background: #f8faff;
+            padding: 10px 18px;
+            border-bottom: 1px solid rgba(37, 99, 235, 0.08);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .rag-console-dot {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #10b981;
+            animation: pulse-dot 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse-dot {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .rag-console-logs {
+            padding: 16px 20px;
+            max-height: 250px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .rag-log-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.86rem;
+            color: #333344;
+            font-weight: 500;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.02);
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .rag-log-icon {
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            font-size: 1rem;
+        }
+
+        .rag-log-text {
+            flex-grow: 1;
+        }
+
+        .rag-log-time {
+            font-size: 0.76rem;
+            color: #a0aec0;
+        }
+
+        /* Mockup Partner Row styling */
+        .trusted-partners-row {
+            margin: 60px auto 20px auto;
+            max-width: 900px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .trusted-partners-row p {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #8a8a9a;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+        }
+
+        .partners-logo-grid {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 40px;
+            flex-wrap: wrap;
+            opacity: 0.65;
+        }
+
+        .partner-logo {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #555566;
+            letter-spacing: -0.5px;
+        }
+
+
+        .chat-settings-select {
+            border: none;
+            background: none;
+            outline: none;
+            font-family: inherit;
+            font-weight: 700;
+            color: var(--primary);
+            cursor: pointer;
+            padding-right: 12px;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237c4dff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right center;
+        }
+
+        .chat-input-bar {
+            background: #faf8ff;
+            border-top: 1px solid rgba(124, 77, 255, 0.06);
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .chat-input-icon {
+            color: var(--primary);
+            opacity: 0.65;
+            cursor: pointer;
+            transition: var(--transition);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .chat-input-icon:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        .chat-input-field {
+            flex-grow: 1;
+            border: none;
+            background: transparent;
+            outline: none;
+            font-family: inherit;
+            font-size: 0.88rem;
+            color: #1a1a24;
+            padding: 8px 4px;
+        }
+
+        .chat-input-field::placeholder {
+            color: #b0aebf;
+        }
+
+        .chat-send-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 10px rgba(124, 77, 255, 0.2);
+            flex-shrink: 0;
+        }
+
+        .chat-send-btn:hover {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+            box-shadow: 0 6px 14px rgba(124, 77, 255, 0.3);
+        }
+
+        .chat-send-btn svg {
+            width: 15px;
+            height: 15px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.5;
+        }
+
+        /* Larka Indexer styling */
+        .indexer-larka-section {
+            max-width: 650px;
+            width: 100%;
+            margin: 80px auto 40px auto;
+            padding: 0 20px;
+            text-align: center;
+        }
+
+        .indexer-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #1a1a24;
+            margin-bottom: 12px;
+        }
+
+        .indexer-subtitle {
+            font-size: 0.92rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        .indexer-larka-bar {
+            background: #ffffff;
+            border: 1px solid rgba(37, 99, 235, 0.12);
+            border-radius: 50px;
+            padding: 8px 10px 8px 20px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.03), 0 2px 8px rgba(0, 0, 0, 0.01);
+            transition: var(--transition);
+        }
+
+        .indexer-larka-bar:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 12px 30px rgba(37, 99, 235, 0.08);
+        }
+
+        .indexer-larka-input {
+            flex-grow: 1;
+            border: none;
+            outline: none;
+            font-family: inherit;
+            font-size: 0.95rem;
+            color: var(--text-main);
+            background: transparent;
+            padding-right: 12px;
+        }
+
+        .indexer-larka-input::placeholder {
+            color: #b0b0c0;
+        }
+
+        .indexer-larka-submit {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 25px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.88rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+            flex-shrink: 0;
+        }
+
+        .indexer-larka-submit:hover {
+            background: var(--primary-hover);
+        }
+
+        /* Print styles for generating clean PDF of literature reports */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            body::before, body::after, header, .hero-section, .search-pill-container, .how-it-works-section, .stepper-container, .features-section-larka, .rag-console-panel, .trusted-partners-row, footer {
+                display: none !important;
+            }
+            main {
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .results-wrapper {
+                display: block !important;
+                box-shadow: none !important;
+                border: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .results-header button, .results-header div {
+                display: none !important;
+            }
+            .review-section {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                margin-bottom: 30px !important;
+                page-break-inside: avoid;
+            }
+            .review-section h3 {
+                border-bottom: 1px dashed #ccc !important;
+                color: black !important;
+            }
+        }
+
+        /* Premium System Activity Log List */
+        .logs-container {
+            display: none;
+            background: #ffffff;
+            border: 1.5px solid rgba(255, 95, 56, 0.16);
+            border-radius: var(--radius-lg);
+            padding: 40px;
+            box-shadow: 0 12px 36px rgba(255, 95, 56, 0.03), 0 2px 12px rgba(0, 0, 0, 0.01);
+            margin-top: 24px;
+        }
+
+        .logs-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 28px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logs-bullet {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--primary);
+            display: inline-block;
+        }
+
+        .logs-wrapper {
+            max-height: 400px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-right: 8px;
+        }
+
+        .logs-wrapper::-webkit-scrollbar {
+            width: 6px;
+        }
+        .logs-wrapper::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .logs-wrapper::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.08);
+            border-radius: 3px;
+        }
+
+        .log-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.95rem;
+            color: #2d3748;
+            padding: 6px 0;
+        }
+
+        .log-content-left {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .log-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            color: var(--primary);
+        }
+
+        .log-icon svg {
+            width: 18px;
+            height: 18px;
+            stroke-width: 1.8px;
+        }
+
+        .log-text {
+            font-weight: 500;
+            color: #2d3748;
+        }
+
+        .log-right-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .log-tag-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--primary);
+            background: var(--primary-light);
+            padding: 2px 10px;
+            border-radius: 12px;
+        }
+
+        .log-time {
+            font-size: 0.85rem;
+            color: #a0aec0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        .view-panel {
+            display: none;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .view-panel.active {
+            display: block;
+        }
+
+        /* Footer */
+        footer {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 40px 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <!-- Decorative Floating 3D Glossy Shapes -->
+    <div class="decor-shape shape-left"></div>
+    <div class="decor-shape shape-right"></div>
+
+    <header class="larka-navbar">
+        <div class="navbar-logo" onclick="window.location.href='/'">arXiv <span>Agent</span></div>
+        <div class="navbar-links">
+            <a href="/" class="nav-link active">Deep Research</a>
+            <a href="/indexer" class="nav-link">Instant Indexer</a>
+            <a href="https://github.com/saumyajain03/arXivAgent" target="_blank" class="nav-link">GitHub</a>
+        </div>
+        <div class="navbar-actions"></div>
+    </header>
+
+    <main>
+        <!-- Larka Centered Hero Area -->
+        <div class="hero-larka-section">
+            <div class="top-hub-badge">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                arXiv Research Hub
+            </div>
+            
+            <h1 class="hero-larka-title">
+                Search. Parse. <span class="italic-serif">Synthesize.</span><br>
+                All in One <span class="italic-serif blue-text">Agentic arXiv.</span>
+            </h1>
+            
+            <p class="hero-larka-subtitle">
+                Unlock the full potential of multi-agent RAG with a single system designed to power your academic reviews, literature checks, and CS.AI paper synthesis.
+            </p>
+            
+
+            
+            <!-- Larka Wide Search Pill -->
+            <div class="search-larka-wrapper">
+                <div class="search-larka-bar">
+                    <span class="larka-sparkle">
+                        <svg viewBox="0 0 24 24" width="22" height="22">
+                            <defs>
+                                <linearGradient id="sparkle-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#3b82f6" />
+                                    <stop offset="50%" stop-color="#ec4899" />
+                                    <stop offset="100%" stop-color="#f59e0b" />
+                                </linearGradient>
+                            </defs>
+                            <path fill="url(#sparkle-grad)" d="M12 2l2.4 7.2L22 12l-7.6 2.4-2.4 7.2-2.4-7.2L2 12l7.6-2.4z"/>
+                        </svg>
+                    </span>
+                    
+                    <input type="text" id="query-input" class="search-larka-input" placeholder="What do you want to research today?" onkeydown="handleSearchKey(event)">
+                    
+                    <button class="search-larka-submit" onclick="runResearch()">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="19" x2="12" y2="5"></line>
+                            <polyline points="5 12 12 5 19 12"></polyline>
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="search-larka-settings">
+                    <div class="settings-larka-item">
+                        <span>Depth:</span>
+                        <select class="settings-larka-select" id="depth-select">
+                            <option value="quick">Quick</option>
+                            <option value="pro">Agentic Survey</option>
+                        </select>
+                        <span class="settings-larka-subtext" id="depth-subtext">3-4 sections, ~3 min</span>
+                    </div>
+                    <div class="settings-larka-item">
+                        <span>Format:</span>
+                        <select class="settings-larka-select" id="format-select">
+                            <option value="pdf_md">PDF + MD</option>
+                            <option value="markdown">Markdown</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-Time RAG Console Panel -->
+            <div id="logs-container" class="rag-console-panel">
+                <div class="rag-console-header">
+                    <div class="rag-console-dot"></div>
+                    <span>RAG Live Processing Console</span>
+                </div>
+                <div id="logs-wrapper" class="rag-console-logs">
+                    <!-- Dynamic processing bubbles print here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Mockup Partner Row -->
+        <div class="trusted-partners-row">
+            <p>Configured Research Interfaces & Databases</p>
+            <div class="partners-logo-grid">
+                <span class="partner-logo">arXiv API</span>
+                <span class="partner-logo">OpenSearch</span>
+                <span class="partner-logo">Neon Postgres</span>
+                <span class="partner-logo">Upstash Redis</span>
+                <span class="partner-logo">Jina AI</span>
+                <span class="partner-logo">LangGraph</span>
+                <span class="partner-logo">Docling</span>
+                <span class="partner-logo">Logfire</span>
+            </div>
+        </div>
+
+        <!-- Result Report Render -->
+        <div id="results" class="results-wrapper" style="margin-top: 30px;">
+            <div class="results-header">
+                <h2 class="results-title">Literature Review Report</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="export-btn" onclick="exportReport()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                        Download Markdown (.md)
+                    </button>
+                    <button class="export-btn" onclick="window.print()" style="background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+                        Save as PDF / Print
+                    </button>
+                </div>
+            </div>
+            
+            <div id="review-content">
+                <!-- Dynamic sections go here -->
+            </div>
+
+            <!-- Sources Details -->
+            <div class="sources-panel">
+                <h3 class="sources-title">Cited Research Publications</h3>
+                <div id="sources-list" class="sources-list">
+                    <!-- Dynamic cards go here -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>© 2026 arXiv Agentic RAG. Designed for Free cloud deployment via Pinecone Serverless and GitHub Actions.</p>
+    </footer>
+
+    <script>
+        // Typing placeholder animation for search input
+        const placeholders = [
+            "What do you want to research today?"
+        ];
+        let placeholderIndex = 0;
+        let charIndex = 0;
+        let isDeleting = false;
+        let typeSpeed = 80;
+
+        function typePlaceholder() {
+            const input = document.getElementById('query-input');
+            if (!input) return;
+            
+            const currentText = placeholders[placeholderIndex];
+            if (isDeleting) {
+                input.placeholder = currentText.substring(0, charIndex) + " |";
+                charIndex--;
+                typeSpeed = 40;
+            } else {
+                input.placeholder = currentText.substring(0, charIndex) + " |";
+                charIndex++;
+                typeSpeed = 80;
+            }
+
+            if (!isDeleting && charIndex === currentText.length + 1) {
+                isDeleting = true;
+                typeSpeed = 2000; // Pause at end
+            } else if (isDeleting && charIndex === 0) {
+                isDeleting = false;
+                placeholderIndex = (placeholderIndex + 1) % placeholders.length;
+                typeSpeed = 500; // Pause before next sentence
+            }
+
+            setTimeout(typePlaceholder, typeSpeed);
+        }
+
+        // Run animation and listeners immediately since script is at the bottom of the body
+        typePlaceholder();
+        
+        // Toggle depth description dynamically
+        document.getElementById('depth-select')?.addEventListener('change', (e) => {
+            const subtext = document.getElementById('depth-subtext');
+            if (subtext) {
+                if (e.target.value === 'pro') {
+                    subtext.textContent = '6-7 sections, ~10 min';
+                } else {
+                    subtext.textContent = '3-4 sections, ~3 min';
+                }
+            }
+        });
+
+
+
+
+
+        function fillQuery(text) {
+            document.getElementById('query-input').value = text;
+        }
+
+        function handleSearchKey(event) {
+            if (event.key === 'Enter') {
+                runResearch();
+            }
+        }
+
+        // Real-Time Paced Activity Log Rendering
+        let logTimer = null;
+        let sseDone = false;
+        let sseResult = null;
+        let sseError = null;
+
+        function appendLog(loggerName, level, text) {
+            const logsWrapper = document.getElementById('logs-wrapper');
+            if (!logsWrapper) return;
+
+            const time = new Date().toLocaleTimeString();
+            const lowerText = text.toLowerCase();
+            let displayIcon = '';
+            let rightBadge = '';
+            
+            // Define SVG icons matching screenshot exactly
+            const searchIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+            const checkIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+            const pulseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>';
+            const fileIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>';
+            const databaseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path></svg>';
+            const doubleCheckIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 6 8.5 15 4.5 11"></polyline><polyline points="21 6 12.5 15 10 12.5"></polyline></svg>';
+
+            if (lowerText.includes("analyzing your query")) {
+                text = "Analyzing your query...";
+                displayIcon = searchIcon;
+            } else if (lowerText.includes("generating search anchor")) {
+                text = "Analyzing query & generating search anchor...";
+                displayIcon = searchIcon;
+            } else if (lowerText.includes("report plan generated")) {
+                text = "Report plan generated (4 sections)";
+                displayIcon = checkIcon;
+                rightBadge = '<span class="log-tag-badge">4 sections</span>';
+            } else if (lowerText.includes("review generated plan")) {
+                text = "Review generated plan before continuing.";
+                displayIcon = pulseIcon;
+                rightBadge = '<span class="log-tag-badge">4 sections</span>';
+            } else if (lowerText.includes("report plan approved")) {
+                text = "Report plan approved (4 sections)";
+                displayIcon = checkIcon;
+            } else if (lowerText.includes("aggregating sections")) {
+                text = "Aggregating sections & deduplicating sources...";
+                displayIcon = checkIcon;
+            } else if (lowerText.includes("premium synthesis")) {
+                text = "Premium synthesis: writing final report...";
+                displayIcon = fileIcon;
+            } else if (lowerText.includes("compiling report")) {
+                text = "Compiling report into PDF, Markdown & JSON...";
+                displayIcon = databaseIcon;
+            } else if (lowerText.includes("report ready")) {
+                text = "Report ready!";
+                displayIcon = doubleCheckIcon;
+            } else {
+                displayIcon = pulseIcon;
+            }
+
+            const logItem = document.createElement('div');
+            logItem.className = 'log-item';
+            
+            logItem.innerHTML = `
+                <div class="log-content-left">
+                    <div class="log-icon">${displayIcon}</div>
+                    <span class="log-text">${text}</span>
+                </div>
+                <div class="log-right-wrapper">
+                    ${rightBadge}
+                    <span class="log-time">${time}</span>
+                </div>
+            `;
+            
+            logsWrapper.appendChild(logItem);
+            logsWrapper.scrollTop = logsWrapper.scrollHeight;
+        }
+
+        async function runResearch() {
+            const queryInput = document.getElementById('query-input');
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            // Clear input
+            queryInput.value = '';
+
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('logs-container').style.display = 'block';
+            
+            const logsWrapper = document.getElementById('logs-wrapper');
+            logsWrapper.innerHTML = ''; 
+            
+            sseDone = false;
+            sseResult = null;
+            sseError = null;
+
+            const simulatedSteps = [
+                "analyzing your query",
+                "generating search anchor",
+                "report plan generated",
+                "review generated plan",
+                "report plan approved",
+                "aggregating sections",
+                "premium synthesis",
+                "compiling report"
+            ];
+
+            let currentLogIndex = 0;
+
+            function triggerNextLog() {
+                if (currentLogIndex < simulatedSteps.length) {
+                    appendLog('System', 'INFO', simulatedSteps[currentLogIndex]);
+                    currentLogIndex++;
+                    logTimer = setTimeout(triggerNextLog, 1500);
+                } else {
+                    checkCompletion();
+                }
+            }
+
+            function checkCompletion() {
+                if (sseDone) {
+                    if (sseError) {
+                        appendLog('System', 'ERROR', `Execution failed: ${sseError}`);
+                        setTimeout(() => {
+                            document.getElementById('logs-container').style.display = 'none';
+                        }, 2500);
+                        alert('RAG Query Failed: ' + sseError);
+                    } else if (sseResult) {
+                        appendLog('System', 'INFO', 'report ready');
+                        setTimeout(() => {
+                            document.getElementById('logs-container').style.display = 'none';
+                            renderResults(sseResult);
+                        }, 1200);
+                    }
+                } else {
+                    logTimer = setTimeout(checkCompletion, 500);
+                }
+            }
+
+            if (logTimer) clearTimeout(logTimer);
+            triggerNextLog();
+
+            try {
+                const eventSource = new EventSource(`/api/v1/ask-stream-logs?query=${encodeURIComponent(query)}`);
+
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.done) {
+                        eventSource.close();
+                        sseResult = data.result;
+                        sseDone = true;
+                    }
+                    
+                    if (data.error) {
+                        eventSource.close();
+                        sseError = data.error;
+                        sseDone = true;
+                    }
+                };
+
+                eventSource.onerror = function(err) {
+                    eventSource.close();
+                    sseError = 'Log stream connection lost.';
+                    sseDone = true;
+                };
+
+            } catch (err) {
+                sseError = err.message;
+                sseDone = true;
+            }
+        }
+
+        function renderResults(data) {
+            const container = document.getElementById('review-content');
+            container.innerHTML = '';
+            
+            const answerText = data.answer || '';
+            
+            // Check if answer contains sections split by '###'
+            if (answerText.includes('###')) {
+                const paragraphs = answerText.split('###').filter(p => p.trim());
+                paragraphs.forEach(para => {
+                    const lines = para.split('\n');
+                    const title = lines[0].trim();
+                    const content = lines.slice(1).join('\n').trim();
+                    
+                    if (content) {
+                        const secDiv = document.createElement('div');
+                        secDiv.className = 'review-section';
+                        
+                        const titleEl = document.createElement('h3');
+                        titleEl.textContent = title;
+                        
+                        const contentEl = document.createElement('p');
+                        const formattedContent = content.replace(/\[([^\]]+)\]/g, (match, citation) => {
+                            return `<span class="citation-ref" onclick="highlightSource('${citation}')">${match}</span>`;
+                        });
+                        contentEl.innerHTML = formattedContent;
+                        
+                        secDiv.appendChild(titleEl);
+                        secDiv.appendChild(contentEl);
+                        container.appendChild(secDiv);
+                    }
+                });
+            } else {
+                // Render as a single comprehensive answer section
+                const secDiv = document.createElement('div');
+                secDiv.className = 'review-section';
+                
+                const titleEl = document.createElement('h3');
+                titleEl.textContent = 'Synthesis Report';
+                
+                const contentEl = document.createElement('p');
+                const formattedContent = answerText.replace(/\[([^\]]+)\]/g, (match, citation) => {
+                    return `<span class="citation-ref" onclick="highlightSource('${citation}')">${match}</span>`;
+                });
+                contentEl.innerHTML = formattedContent;
+                
+                secDiv.appendChild(titleEl);
+                secDiv.appendChild(contentEl);
+                container.appendChild(secDiv);
+            }
+
+            // Render sources
+            const sourcesList = document.getElementById('sources-list');
+            sourcesList.innerHTML = '';
+            
+            const sources = data.sources || [];
+            sources.forEach(sourceObj => {
+                let url = '';
+                let title = '';
+                let authors = '';
+                let arxivId = '';
+                
+                if (typeof sourceObj === 'string') {
+                    // Standard RAG format
+                    url = sourceObj;
+                    const filename = url.substring(url.lastIndexOf('/') + 1);
+                    arxivId = filename.replace('.pdf', '');
+                    title = `Publication Source: arXiv:${arxivId}`;
+                } else if (sourceObj && typeof sourceObj === 'object') {
+                    // Agentic RAG format
+                    arxivId = sourceObj.arxiv_id || '';
+                    const baseArxivId = arxivId.split('v')[0];
+                    url = sourceObj.url || `https://arxiv.org/pdf/${baseArxivId}.pdf`;
+                    title = sourceObj.title || `Publication Source: arXiv:${arxivId}`;
+                    authors = sourceObj.authors ? `Authors: ${sourceObj.authors}` : '';
+                }
+                
+                if (!url) return;
+                
+                // Clean arXiv ID to make a valid DOM selector
+                const baseArxivId = arxivId.split('v')[0];
+                const cleanIdForDom = baseArxivId.replace(/[^a-zA-Z0-9]/g, '_');
+                
+                const card = document.createElement('div');
+                card.className = 'source-card';
+                card.id = `source-${cleanIdForDom}`;
+                
+                card.innerHTML = `
+                    <div class="source-details">
+                        <h4>${title}</h4>
+                        ${authors ? `<p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px;">${authors}</p>` : ''}
+                        <p style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px; word-break: break-all;">Document URL: ${url}</p>
+                    </div>
+                    <a href="${url}" target="_blank" class="source-link-btn">
+                        Open PDF
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                    </a>
+                `;
+                sourcesList.appendChild(card);
+            });
+
+            document.getElementById('results').style.display = 'flex';
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function highlightSource(citation) {
+            // Find if there is an arXiv ID matching the citation
+            const match = citation.match(/\d{4}\.\d{4,5}/);
+            if (match) {
+                const arxivId = match[0];
+                const cleanIdForDom = arxivId.replace(/[^a-zA-Z0-9]/g, '_');
+                const card = document.getElementById(`source-${cleanIdForDom}`);
+                if (card) {
+                    card.style.borderColor = 'var(--primary)';
+                    card.style.background = 'var(--primary-light)';
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    setTimeout(() => {
+                        card.style.borderColor = 'var(--border)';
+                        card.style.background = 'white';
+                    }, 3000);
+                }
+            }
+        }
+
+        async function runIngestion() {
+            const input = document.getElementById('arxiv-id-input');
+            const id = input.value.trim();
+            const statusDiv = document.getElementById('ingest-status');
+            
+            if (!id) return;
+
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `Connecting to arXiv API to fetch and parse paper ${id}...`;
+
+            try {
+                const response = await fetch('/api/v1/ingest/arxiv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ arxiv_id: id })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Successfully indexed paper ${id}! Generated and indexed ${data.chunks_indexed} semantic chunk embeddings to Pinecone.`;
+                    input.value = '';
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = `Error: ${data.error || 'Failed to process paper.'}`;
+                }
+            } catch (err) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = `Network Error: ${err.message}`;
+            }
+        }
+
+        function exportReport() {
+            const query = document.getElementById('query-input').value || 'Research Report';
+            const sections = Array.from(document.querySelectorAll('.review-section'));
+            let mdContent = `# Literature Review: ${query}\n\n`;
+            
+            sections.forEach(sec => {
+                const title = sec.querySelector('h3').textContent;
+                const text = sec.querySelector('p').textContent;
+                mdContent += `## ${title}\n\n${text}\n\n`;
+            });
+            
+            mdContent += `## Sources\n`;
+            document.querySelectorAll('.source-card').forEach(card => {
+                const text = card.querySelector('h4').textContent;
+                mdContent += `- ${text}\n`;
+            });
+
+            const blob = new Blob([mdContent], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${query.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_report.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
