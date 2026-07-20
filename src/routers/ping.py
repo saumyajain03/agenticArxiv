@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from ..dependencies import DatabaseDep, OpenSearchDep, SettingsDep
@@ -9,7 +9,7 @@ router = APIRouter()
 
 
 @router.get("/health", response_model=HealthResponse, tags=["Health"])
-async def health_check(settings: SettingsDep, database: DatabaseDep, opensearch_client: OpenSearchDep) -> HealthResponse:
+async def health_check(request: Request, settings: SettingsDep, database: DatabaseDep, opensearch_client: OpenSearchDep) -> HealthResponse:
     """Comprehensive health check endpoint for monitoring and load balancer probes.
 
     :returns: Service health status with version and connectivity checks
@@ -38,19 +38,32 @@ async def health_check(settings: SettingsDep, database: DatabaseDep, opensearch_
             session.execute(text("SELECT 1"))
         return ServiceStatus(status="healthy", message="Connected successfully")
 
-    # OpenSearch check
-    def _check_opensearch():
-        if not opensearch_client.health_check():
-            return ServiceStatus(status="unhealthy", message="Not responding")
-        stats = opensearch_client.get_index_stats()
-        return ServiceStatus(
-            status="healthy",
-            message=f"Index '{stats.get('index_name', 'unknown')}' with {stats.get('document_count', 0)} documents",
-        )
+    # Vector Search check
+    if settings.vector_db_provider == "pinecone":
+        def _check_pinecone():
+            pinecone_client = getattr(request.app.state, "pinecone_client", None)
+            if not pinecone_client:
+                return ServiceStatus(status="unhealthy", message="Pinecone client not initialized")
+            if not pinecone_client.health_check():
+                return ServiceStatus(status="unhealthy", message="Not responding")
+            return ServiceStatus(
+                status="healthy",
+                message=f"Index '{pinecone_client.index_name}' connected successfully",
+            )
+        _check_service("pinecone", _check_pinecone)
+    else:
+        def _check_opensearch():
+            if not opensearch_client.health_check():
+                return ServiceStatus(status="unhealthy", message="Not responding")
+            stats = opensearch_client.get_index_stats()
+            return ServiceStatus(
+                status="healthy",
+                message=f"Index '{stats.get('index_name', 'unknown')}' with {stats.get('document_count', 0)} documents",
+            )
+        _check_service("opensearch", _check_opensearch)
 
     # Run synchronous checks
     _check_service("database", _check_database)
-    _check_service("opensearch", _check_opensearch)
 
     # OpenAI API health check
     try:
