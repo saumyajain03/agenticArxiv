@@ -76,36 +76,41 @@ class PostgreSQLDatabase(BaseDatabase):
 
             self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
 
-            # Test the connection
-            assert self.engine is not None
-            with self.engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-                logger.info("Database connection test successful")
+            # Test the connection and initialize tables (wrapped to avoid blocking/crashing startup during cold-starts)
+            try:
+                assert self.engine is not None
+                with self.engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                    logger.info("Database connection test successful")
 
-            # Check which tables exist before creating
-            inspector = inspect(self.engine)
-            existing_tables = inspector.get_table_names()
+                # Check which tables exist before creating
+                inspector = inspect(self.engine)
+                existing_tables = inspector.get_table_names()
 
-            # Create tables if they don't exist (idempotent operation)
-            Base.metadata.create_all(bind=self.engine)
+                # Create tables if they don't exist (idempotent operation)
+                Base.metadata.create_all(bind=self.engine)
 
-            # Check if any new tables were created
-            updated_tables = inspector.get_table_names()
-            new_tables = set(updated_tables) - set(existing_tables)
+                # Check if any new tables were created
+                updated_tables = inspector.get_table_names()
+                new_tables = set(updated_tables) - set(existing_tables)
 
-            if new_tables:
-                logger.info(f"Created new tables: {', '.join(new_tables)}")
-            else:
-                logger.info("All tables already exist - no new tables created")
+                if new_tables:
+                    logger.info(f"Created new tables: {', '.join(new_tables)}")
+                else:
+                    logger.info("All tables already exist - no new tables created")
 
-            logger.info("PostgreSQL database initialized successfully")
-            assert self.engine is not None
-            logger.info(f"Database: {self.engine.url.database}")
-            logger.info(f"Total tables: {', '.join(updated_tables) if updated_tables else 'None'}")
-            logger.info("Database connection established")
+                logger.info("PostgreSQL database initialized successfully")
+                logger.info(f"Database: {self.engine.url.database}")
+                logger.info(f"Total tables: {', '.join(updated_tables) if updated_tables else 'None'}")
+                logger.info("Database connection established")
+            except Exception as conn_err:
+                logger.warning(
+                    f"PostgreSQL database connection test/initialization deferred: {conn_err}. "
+                    "The server will boot up anyway and reconnect dynamically on demand."
+                )
 
         except Exception as e:
-            logger.error(f"Failed to initialize PostgreSQL database: {e}")
+            logger.error(f"Failed to create PostgreSQL engine: {e}")
             raise
 
     def teardown(self) -> None:
