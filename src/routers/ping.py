@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import Response
 from sqlalchemy import text
 
 from ..dependencies import DatabaseDep, OpenSearchDep, SettingsDep
@@ -6,7 +7,6 @@ from ..schemas.api.health import HealthResponse, ServiceStatus
 from ..services.openai_llm.client import OpenAILLMClient
 
 import logging
-import traceback
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -15,28 +15,55 @@ router = APIRouter()
 
 
 @router.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse, tags=["Health"])
-async def health_check(request: Request, settings: SettingsDep, database: DatabaseDep, opensearch_client: OpenSearchDep) -> HealthResponse:
+async def health_check(request: Request, settings: SettingsDep) -> HealthResponse:
+    """
+    Health check endpoint.
+
+    Returns 200 OK with status="starting" while background services are still
+    initializing (prevents Render from killing the service during the slow startup window).
+    Returns full service status once everything is ready.
+    """
     logger.debug("ENTRY: /api/v1/health")
+
+    # --- Fast path: return 200 "starting" during background initialization ---
+    # Render's health checker will keep the service alive as long as it gets 200.
+    # Returning 503/crashing here during the ~3-min init window causes Render to
+    # restart the service in a loop, preventing it from ever becoming ready.
+    agentic_ready = getattr(request.app.state, "agentic_rag_service", None) is not None
+    if not agentic_ready:
+        return HealthResponse(
+            status="starting",
+            version=settings.app_version,
+            environment=settings.environment,
+            service_name=settings.service_name,
+            services={
+                "startup": ServiceStatus(
+                    status="starting",
+                    message="Services are initializing in background. Please wait ~2-3 minutes on first boot.",
+                )
+            },
+        )
+
+    # --- Full health check once services are ready ---
     try:
         services = {}
         overall_status = "ok"
 
-        def _check_service(name: str, check_func, *args, **kwargs):
+        def _check_service(name: str, check_func):
+            nonlocal overall_status
             try:
                 logger.debug(f"ENTRY: health check for {name}")
-                if kwargs.get("is_async"):
-                    result = check_func(*args)
-                else:
-                    result = check_func(*args)
+                result = check_func()
                 services[name] = result
                 if result.status != "healthy":
-                    nonlocal overall_status
                     overall_status = "degraded"
                 logger.debug(f"EXIT: health check for {name} - status: {result.status}")
             except Exception as e:
                 logger.exception(f"EXCEPTION: health check for {name} failed")
                 services[name] = ServiceStatus(status="unhealthy", message=str(e))
                 overall_status = "degraded"
+
+        database = getattr(request.app.state, "database", None)
 
         def _check_database():
             if not database:
@@ -58,6 +85,8 @@ async def health_check(request: Request, settings: SettingsDep, database: Databa
                 )
             _check_service("pinecone", _check_pinecone)
         else:
+            opensearch_client = getattr(request.app.state, "opensearch_client", None)
+
             def _check_opensearch():
                 if not opensearch_client:
                     return ServiceStatus(status="unhealthy", message="OpenSearch client not initialized yet")
