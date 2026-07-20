@@ -3,8 +3,10 @@ import tempfile
 import json
 import asyncio
 import logging
+import time
+import traceback
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -20,8 +22,6 @@ router = APIRouter(prefix="/api/v1", tags=["agentic-rag"])
 class ExportPDFRequest(BaseModel):
     query: str
     answer: str
-
-
 
 
 @router.post("/ask-agentic", response_model=AgenticAskResponse)
@@ -133,13 +133,13 @@ async def export_pdf(request: ExportPDFRequest) -> FileResponse:
         generator = MarkdownPDFGenerator()
         temp_dir = Path(tempfile.gettempdir())
         pdf_path = temp_dir / f"arxiv_rag_report_{uuid.uuid4().hex}.pdf"
-        
+
         generator.generate_pdf(
             query=request.query,
             answer_markdown=request.answer,
             output_path=pdf_path
         )
-        
+
         return FileResponse(
             path=pdf_path,
             media_type="application/pdf",
@@ -150,69 +150,241 @@ async def export_pdf(request: ExportPDFRequest) -> FileResponse:
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
 
 
+# ---------------------------------------------------------------------------
+# Fully instrumented streaming endpoint
+# Every stage is logged with a [STAGE] prefix so you can grep Render logs
+# and immediately see which stage is reached / missing / slow.
+# ---------------------------------------------------------------------------
+
 @router.get("/ask-stream-logs")
 async def ask_stream_logs(
     query: str,
+    http_request: Request,
     agentic_rag: AgenticRAGDep,
 ):
-    """Execute Agentic RAG in the background and stream logs in real-time."""
+    """
+    Execute Agentic RAG in the background and stream logs in real-time.
+
+    SSE event shapes:
+      {"log": "<message>"}              — pipeline stage log line
+      {"result": {...}, "done": true}   — final answer payload
+      {"error": "<msg>", "traceback": "..."}  — fatal error with full tb
+    """
+    req_id = str(uuid.uuid4())[:8]
+
     async def log_generator():
-        queue = asyncio.Queue()
-        
+        # ── STAGE 0: endpoint entered ────────────────────────────────────────
+        t0 = time.perf_counter()
+        logger.info("[STAGE] ENTRY ask_stream_logs | req=%s | query=%r", req_id, query[:80])
+        yield f"data: {json.dumps({'log': f'[{req_id}] ENTRY ask_stream_logs'})}\n\n"
+
+        queue: asyncio.Queue = asyncio.Queue()
+
+        # ── Log capture: forward agent logs to SSE ───────────────────────────
         class QueueLogHandler(logging.Handler):
             def emit(self, record):
                 try:
-                    if 'agents' not in record.name:
-                        return
                     msg = record.getMessage()
-                    # Filter out verbose initialization/utility details
+                    # Always forward STAGE and PIPELINE lines
+                    if "[STAGE]" in msg or "[PIPELINE]" in msg:
+                        queue.put_nowait(self.format(record))
+                        return
+                    # Forward all agent-namespace logs
+                    if "agents" not in record.name and "nodes" not in record.name:
+                        return
+                    # Drop noisy init chatter
                     if any(x in msg for x in [
                         "Initializing AgenticRAGService", "Model:", "Top-k:", "Hybrid search:",
                         "Max retrieval:", "Guardrail threshold:", "initialized successfully",
-                        "Building LangGraph workflow", "Adding nodes to workflow", "Configuring graph edges",
-                        "Compiling LangGraph workflow", "Graph compilation successful", "Creating Langfuse trace",
-                        "CallbackHandler added", "Generating graph", "Answer length:", "Sources found:",
-                        "Retrieval attempts:", "Execution time:", "=================="
+                        "Building LangGraph workflow", "Adding nodes to workflow",
+                        "Configuring graph edges", "Compiling LangGraph workflow",
+                        "Graph compilation successful", "CallbackHandler added",
+                        "Generating graph", "==================",
                     ]):
                         return
-                    
-                    formatted_msg = self.format(record)
-                    queue.put_nowait(formatted_msg)
+                    queue.put_nowait(self.format(record))
                 except Exception:
                     pass
 
-        # Format: timestamp - logger_name - LEVEL - message
         handler = QueueLogHandler()
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        
-        root_logger = logging.getLogger()
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s.%(msecs)03d [%(name)s] %(levelname)s — %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
         handler.setLevel(logging.INFO)
+        root_logger = logging.getLogger()
         root_logger.addHandler(handler)
-        
-        # Start agentic RAG task
-        task = asyncio.create_task(agentic_rag.ask(query=query))
-        
+
+        # ── STAGE 1: request validated ───────────────────────────────────────
+        logger.info("[STAGE] Request validated | req=%s", req_id)
+        yield f"data: {json.dumps({'log': f'[{req_id}] Request validated'})}\n\n"
+
+        # ── STAGE 2: agent instance confirmed ───────────────────────────────
+        logger.info("[STAGE] Agent initialized (singleton) | req=%s", req_id)
+        yield f"data: {json.dumps({'log': f'[{req_id}] Agent initialized'})}\n\n"
+
+        # ── STAGE 3: launch background task ─────────────────────────────────
+        logger.info("[STAGE] Launching background pipeline task | req=%s", req_id)
+        yield f"data: {json.dumps({'log': f'[{req_id}] Pipeline task launched'})}\n\n"
+
+        task = asyncio.create_task(_run_instrumented_pipeline(agentic_rag, query, req_id))
+
+        # ── Drain queue until task done; detect frontend disconnect ──────────
+        backend_terminated = False
         try:
-            yield f"data: {json.dumps({'log': 'System - INFO - Agent connection initialized. Starting research pipeline...'})}\n\n"
-            
             while not task.done() or not queue.empty():
+                # Detect frontend disconnect
+                if await http_request.is_disconnected():
+                    elapsed = (time.perf_counter() - t0) * 1000
+                    logger.warning(
+                        "[STAGE] CLIENT DISCONNECTED — stream terminated by FRONTEND | req=%s | elapsed=%.0fms",
+                        req_id, elapsed,
+                    )
+                    task.cancel()
+                    yield f"data: {json.dumps({'log': f'[{req_id}] ⚠ FRONTEND DISCONNECTED after {elapsed:.0f}ms'})}\n\n"
+                    return
+
                 try:
-                    log_msg = await asyncio.wait_for(queue.get(), timeout=0.2)
+                    log_msg = await asyncio.wait_for(queue.get(), timeout=0.3)
                     yield f"data: {json.dumps({'log': log_msg})}\n\n"
                 except asyncio.TimeoutError:
+                    # SSE heartbeat comment — keeps Render's proxy from closing the TCP connection
+                    yield ": heartbeat\n\n"
                     continue
                 except Exception:
                     break
 
-            result = await task
-            yield f"data: {json.dumps({'result': result, 'done': True})}\n\n"
-            
-        except Exception as e:
-            logger.error(f"Error in agent log stream: {e}", exc_info=True)
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            # ── Task finished — emit result or exception ──────────────────────
+            backend_terminated = True
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+
+            try:
+                result = task.result()
+                logger.info(
+                    "[STAGE] Stream completed by BACKEND | req=%s | total=%.0fms | answer_len=%d",
+                    req_id, elapsed_ms, len(result.get("answer", "")),
+                )
+                yield f"data: {json.dumps({'log': f'[{req_id}] ✓ STREAM COMPLETE — {elapsed_ms:.0f}ms'})}\n\n"
+                yield f"data: {json.dumps({'result': result, 'done': True})}\n\n"
+
+            except asyncio.CancelledError:
+                logger.warning("[STAGE] Task cancelled | req=%s", req_id)
+                yield f"data: {json.dumps({'error': 'Task was cancelled'})}\n\n"
+
+            except Exception as exc:
+                tb = traceback.format_exc()
+                logger.error(
+                    "[STAGE] TASK EXCEPTION | req=%s | error=%s\n%s",
+                    req_id, repr(exc), tb,
+                )
+                yield f"data: {json.dumps({'error': str(exc), 'traceback': tb})}\n\n"
+
+        except Exception as exc:
+            tb = traceback.format_exc()
+            logger.error("[STAGE] GENERATOR EXCEPTION | req=%s\n%s", req_id, tb)
+            yield f"data: {json.dumps({'error': f'Generator error: {str(exc)}', 'traceback': tb})}\n\n"
+
         finally:
             root_logger.removeHandler(handler)
+            terminated_by = "BACKEND" if backend_terminated else "FRONTEND"
+            logger.info(
+                "[STAGE] Generator exited | req=%s | terminated_by=%s | elapsed=%.0fms",
+                req_id, terminated_by, (time.perf_counter() - t0) * 1000,
+            )
 
     return StreamingResponse(log_generator(), media_type="text/event-stream")
 
 
+async def _run_instrumented_pipeline(agentic_rag, query: str, req_id: str) -> dict:
+    """
+    Wraps agentic_rag.ask() with per-node timing using a NodeWatcher that
+    detects the 'NODE: <name>' sentinel log each node already emits.
+    """
+    node_timings: dict = {}
+    _current: dict = {"name": None, "start": None}
+    pipeline_start = time.perf_counter()
+
+    class NodeWatcher(logging.Handler):
+        NODE_PREFIX = "NODE: "
+
+        def emit(self, record):
+            msg = record.getMessage()
+            if not msg.startswith(self.NODE_PREFIX):
+                return
+            node_name = msg[len(self.NODE_PREFIX):].strip()
+            now = time.perf_counter()
+
+            # Close the previous node
+            prev = _current["name"]
+            if prev and _current["start"]:
+                ms = (now - _current["start"]) * 1000
+                node_timings[prev] = ms
+                logger.info(
+                    "[STAGE] NODE %-25s FINISHED ✓ | stage=%.0fms | elapsed=%.0fms | req=%s",
+                    prev.upper(), ms, (now - pipeline_start) * 1000, req_id,
+                )
+
+            # Open the new node
+            _current["name"] = node_name
+            _current["start"] = now
+            logger.info(
+                "[STAGE] NODE %-25s STARTED   | elapsed=%.0fms | req=%s",
+                node_name.upper(), (now - pipeline_start) * 1000, req_id,
+            )
+
+    watcher = NodeWatcher()
+    watcher.setLevel(logging.INFO)
+    node_loggers = [
+        "src.services.agents.nodes.guardrail_node",
+        "src.services.agents.nodes.supervisor_node",
+        "src.services.agents.nodes.researcher_node",
+        "src.services.agents.nodes.writer_node",
+        "src.services.agents.nodes.critic_node",
+        "src.services.agents.nodes.generate_answer_node",
+        "src.services.agents.nodes.output_guardrail_node",
+        "src.services.agents.nodes.retrieve_node",
+        "src.services.agents.nodes.rewrite_query_node",
+    ]
+    for mod in node_loggers:
+        logging.getLogger(mod).addHandler(watcher)
+
+    try:
+        logger.info("[STAGE] Retriever started | req=%s", req_id)
+        result = await agentic_rag.ask(query=query)
+        logger.info("[STAGE] Pipeline finished | req=%s", req_id)
+
+        # Close last node
+        now = time.perf_counter()
+        prev = _current["name"]
+        if prev and _current["start"]:
+            ms = (now - _current["start"]) * 1000
+            node_timings[prev] = ms
+            logger.info(
+                "[STAGE] NODE %-25s FINISHED ✓ | stage=%.0fms | req=%s",
+                prev.upper(), ms, req_id,
+            )
+
+        # Timing summary
+        total_ms = (now - pipeline_start) * 1000
+        logger.info("[STAGE] ══════ TIMING SUMMARY req=%s ══════", req_id)
+        for node, ms in node_timings.items():
+            pct = ms / total_ms * 100 if total_ms else 0
+            logger.info("[STAGE]   %-30s %7.0f ms  (%4.1f%%)", node, ms, pct)
+        logger.info("[STAGE]   %-30s %7.0f ms", "TOTAL", total_ms)
+        logger.info("[STAGE] ═══════════════════════════════════════", )
+
+        return result
+
+    except Exception as exc:
+        tb = traceback.format_exc()
+        logger.error(
+            "[STAGE] PIPELINE EXCEPTION | req=%s | error=%s\nFULL TRACEBACK:\n%s",
+            req_id, repr(exc), tb,
+        )
+        raise
+
+    finally:
+        for mod in node_loggers:
+            logging.getLogger(mod).removeHandler(watcher)

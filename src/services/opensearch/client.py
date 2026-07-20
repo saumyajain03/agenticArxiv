@@ -26,6 +26,9 @@ class OpenSearchClient:
             use_ssl=False,
             verify_certs=False,
             ssl_show_warn=False,
+            timeout=5,
+            max_retries=1,
+            retry_on_timeout=True,
         )
 
         logger.info(f"OpenSearch client initialized with host: {host}")
