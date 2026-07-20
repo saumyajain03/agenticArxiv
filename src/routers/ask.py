@@ -185,37 +185,49 @@ async def ask_question_stream(
                 except Exception as e:
                     logger.warning(f"Cache check failed: {e}")
 
-            # Execute Multi-Agent RAG pipeline
-            result = await agentic_rag.ask(
-                query=request.query,
-                model=request.model,
-            )
-
-            full_answer = result["answer"]
-            sources_raw = result.get("sources", [])
-
-            # Format source URLs
-            sources = []
-            for src in sources_raw:
-                arxiv_id = src.get("arxiv_id")
-                if arxiv_id:
-                    sources.append(f"https://arxiv.org/pdf/{arxiv_id}.pdf")
-
-            # Send metadata first
-            metadata_response = {
-                "sources": sources,
-                "chunks_used": len(sources),
-                "search_mode": "agentic",
-            }
-            yield f"data: {json.dumps(metadata_response)}\n\n"
-
-            # Stream the generated answer in chunks
-            # Split by character to look like a smooth stream in Gradio
-            chunk_size = 4
-            for i in range(0, len(full_answer), chunk_size):
-                text_chunk = full_answer[i : i + chunk_size]
-                yield f"data: {json.dumps({'chunk': text_chunk})}\n\n"
-                await asyncio.sleep(0.01)
+            # Execute Multi-Agent RAG pipeline with true streaming
+            full_answer = ""
+            try:
+                logger.debug("ENTRY: agentic_rag.astream")
+                async for event in agentic_rag.astream(
+                    query=request.query,
+                    model=request.model,
+                ):
+                    event_type = event.get("type")
+                    if event_type == "heartbeat":
+                        # Send an empty chunk as a keep-alive signal that the frontend can safely append
+                        yield f"data: {json.dumps({'chunk': ''})}\n\n"
+                    elif event_type == "chunk":
+                        # Yield the actual generated text chunk
+                        chunk_data = event.get("data", "")
+                        full_answer += chunk_data
+                        yield f"data: {json.dumps({'chunk': chunk_data})}\n\n"
+                    elif event_type == "metadata":
+                        # Yield the final metadata (sources, attempts)
+                        metadata_data = event.get("data", {})
+                        sources_raw = metadata_data.get("sources", [])
+                        
+                        sources = []
+                        for src in sources_raw:
+                            arxiv_id = src.get("arxiv_id")
+                            if arxiv_id:
+                                sources.append(f"https://arxiv.org/pdf/{arxiv_id}.pdf")
+                        
+                        metadata_response = {
+                            "sources": sources,
+                            "chunks_used": len(sources),
+                            "search_mode": "agentic",
+                        }
+                        yield f"data: {json.dumps(metadata_response)}\n\n"
+                    elif event_type == "error":
+                        error_msg = event.get("data", "Unknown error")
+                        logger.error(f"Error in stream: {error_msg}")
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                        
+                logger.debug("EXIT: agentic_rag.astream success")
+            except Exception as e:
+                logger.exception("EXCEPTION in agentic_rag.astream")
+                raise e
 
             # Send completion signal
             yield f"data: {json.dumps({'answer': full_answer, 'done': True})}\n\n"

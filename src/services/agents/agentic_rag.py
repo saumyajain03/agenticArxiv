@@ -367,6 +367,116 @@ class AgenticRAGService:
 
             raise
 
+    async def astream(
+        self,
+        query: str,
+        user_id: str = "api_user",
+        model: Optional[str] = None,
+    ):
+        """Stream a question using agentic RAG via astream_events or astream.
+        
+        Yields intermediate status updates to keep connections alive, and
+        the final answer tokens as they are generated.
+        
+        :param query: User question
+        :param user_id: User identifier for tracing
+        :param model: Optional model override
+        :yields: dict with 'type' and 'data'
+        """
+        model_to_use = model or self.graph_config.model
+
+        logger.info("Starting Streaming Agentic RAG Request")
+        if not query or len(query.strip()) == 0:
+            raise ValueError("Query cannot be empty")
+
+        # State initialization
+        state_input = {
+            "messages": [HumanMessage(content=query)],
+            "retrieval_attempts": 0,
+            "guardrail_result": None,
+            "routing_decision": None,
+            "sources": None,
+            "relevant_sources": [],
+            "relevant_tool_artefacts": None,
+            "grading_results": [],
+            "metadata": {},
+            "original_query": None,
+            "rewritten_query": None,
+            "sanitized_query": None,
+            "output_guardrail_filter": None,
+        }
+
+        runtime_context = Context(
+            llm_client=self.llm,
+            opensearch_client=self.opensearch,
+            pinecone_client=self.pinecone,
+            embeddings_client=self.embeddings,
+            langfuse_tracer=self.langfuse_tracer,
+            guardrails_service=self.guardrails_service,
+            trace=None,
+            langfuse_enabled=False,
+            model_name=model_to_use,
+            temperature=self.graph_config.temperature,
+            top_k=self.graph_config.top_k,
+            use_hybrid=self.graph_config.use_hybrid,
+            max_retrieval_attempts=self.graph_config.max_retrieval_attempts,
+            guardrail_threshold=self.graph_config.guardrail_threshold,
+        )
+
+        config = {"configurable": {"thread_id": f"user_{user_id}_stream_{int(time.time())}"}}
+
+        try:
+            # We use stream_mode="messages" and "updates" to get both tokens and node progress
+            async for stream_mode, chunk in self.graph.astream(
+                state_input,
+                config=config,
+                context=runtime_context,
+                stream_mode=["messages", "updates"]
+            ):
+                if stream_mode == "updates":
+                    # chunk is a dict of {node_name: node_state_updates}
+                    for node_name in chunk.keys():
+                        # Yield a heartbeat so the connection doesn't drop
+                        yield {"type": "heartbeat"}
+                        
+                elif stream_mode == "messages":
+                    # chunk is a tuple (MessageChunk, metadata)
+                    msg_chunk, _ = chunk
+                    if msg_chunk.content:
+                        yield {"type": "chunk", "data": msg_chunk.content}
+                        
+            # Graph might be suspended on HITL interrupt
+            state_info = await self.graph.aget_state(config)
+            if state_info.next:
+                async for stream_mode, chunk in self.graph.astream(
+                    None,
+                    config=config,
+                    context=runtime_context,
+                    stream_mode=["messages", "updates"]
+                ):
+                    if stream_mode == "updates":
+                        yield {"type": "heartbeat"}
+                    elif stream_mode == "messages":
+                        msg_chunk, _ = chunk
+                        if msg_chunk.content:
+                            yield {"type": "chunk", "data": msg_chunk.content}
+                            
+            # Finalize: yield the final metadata 
+            final_state = await self.graph.aget_state(config)
+            state_dict = final_state.values
+            sources = self._extract_sources(state_dict)
+            yield {
+                "type": "metadata", 
+                "data": {
+                    "sources": sources,
+                    "retrieval_attempts": state_dict.get("retrieval_attempts", 0)
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error in streaming workflow execution: {str(e)}")
+            yield {"type": "error", "data": str(e)}
+
     def _extract_answer(self, result: dict) -> str:
         """Extract final answer from graph result."""
         messages = result.get("messages", [])

@@ -62,40 +62,40 @@ def get_pinecone_client(request: Request) -> Optional[PineconeClient]:
     return getattr(request.app.state, "pinecone_client", None)
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 def _check_initialized(val, name: str):
+    logger.debug(f"ENTRY: checking dependency {name}")
     if val is None:
+        logger.error(f"EXCEPTION: dependency {name} is None (uninitialized)")
         from fastapi import HTTPException
         raise HTTPException(status_code=503, detail=f"Service '{name}' is still initializing. Please retry in a few seconds.")
+    logger.debug(f"EXIT: dependency {name} is ready")
     return val
 
-
 def get_arxiv_client(request: Request) -> ArxivClient:
-    """Get arXiv client from the request state."""
+    logger.debug("DI: get_arxiv_client")
     return _check_initialized(request.app.state.arxiv_client, "ArxivClient")
 
-
 def get_pdf_parser(request: Request) -> PDFParserService:
-    """Get PDF parser service from the request state."""
+    logger.debug("DI: get_pdf_parser")
     return _check_initialized(request.app.state.pdf_parser, "PDFParser")
 
-
 def get_embeddings_service(request: Request) -> JinaEmbeddingsClient:
-    """Get embeddings service from the request state."""
+    logger.debug("DI: get_embeddings_service")
     return _check_initialized(request.app.state.embeddings_service, "EmbeddingsService")
 
-
 def get_llm_client(request: Request) -> LLMClientProtocol:
-    """Get LLM client from the request state (OpenAI or Bedrock depending on PROVIDER)."""
+    logger.debug("DI: get_llm_client")
     return _check_initialized(request.app.state.llm_client, "LLMClient")
 
-
 def get_guardrails_service(request: Request) -> BedrockGuardrailsService:
-    """Get Bedrock Guardrails service from the request state."""
+    logger.debug("DI: get_guardrails_service")
     return _check_initialized(request.app.state.guardrails_service, "GuardrailsService")
 
-
 def get_langfuse_tracer(request: Request) -> LangfuseTracer:
-    """Get Langfuse tracer from the request state."""
+    logger.debug("DI: get_langfuse_tracer")
     return _check_initialized(request.app.state.langfuse_tracer, "LangfuseTracer")
 
 
@@ -127,26 +127,17 @@ TelegramDep = Annotated[Optional[TelegramBot], Depends(get_telegram_service)]
 
 def get_agentic_rag_service(
     request: Request,
-    llm: LLMDep,
-    embeddings: EmbeddingsDep,
-    langfuse: LangfuseDep,
-    guardrails: GuardrailsDep,
-    settings: Annotated[Settings, Depends(get_settings)],
 ) -> "AgenticRAGService":
-    """Get agentic RAG service."""
-    from src.services.agents.factory import make_agentic_rag_service
-
-    opensearch = getattr(request.app.state, "opensearch_client", None)
-    pinecone = getattr(request.app.state, "pinecone_client", None)
-    return make_agentic_rag_service(
-        opensearch_client=opensearch,
-        pinecone_client=pinecone,
-        llm_client=llm,
-        embeddings_client=embeddings,
-        langfuse_tracer=langfuse,
-        guardrails_service=guardrails,
-        settings=settings,
-    )
+    """Get the shared agentic RAG service singleton from app state."""
+    service = getattr(request.app.state, "agentic_rag_service", None)
+    if service is None:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=503,
+            detail="AgenticRAGService is still initializing. Please retry in a few seconds.",
+        )
+    return service
 
 
 AgenticRAGDep = Annotated["AgenticRAGService", Depends(get_agentic_rag_service)]
+

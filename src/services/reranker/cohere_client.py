@@ -17,7 +17,15 @@ class RerankerService:
         :param model_name: The local Cross-Encoder model to load
         :param enabled: Set to False to bypass reranking
         """
-        self.enabled = enabled
+        import os
+        is_render = os.environ.get("RENDER", "").lower() == "true"
+
+        if is_render:
+            logger.info("Render environment detected. Disabling local reranker to prevent OOM.")
+            self.enabled = False
+        else:
+            self.enabled = enabled
+            
         self._model = None
         self.model_name = model_name
 

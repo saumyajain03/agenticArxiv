@@ -44,12 +44,15 @@ async def ainvoke_writer_step(
             logger.warning(f"No papers retrieved for section '{title}'. Writing default draft.")
             return {"title": title, "draft": f"### {title}\n\nNo source papers retrieved to compile this section."}
 
-        # Select the top 2 papers to perform deep context reading
-        top_hits = hits[:2]
+        # Select the top 1 paper to minimize token usage and avoid Groq 413 Rate Limits
+        top_hits = hits[:1]
         contexts = []
         for i, hit in enumerate(top_hits):
             # Fetch the parent text (full section) or standard chunk
             doc_context = hit.get("parent_text") or hit.get("chunk_text") or ""
+            # Aggressively truncate to ~1500 characters (~300 words) to fit TPM limits
+            doc_context = doc_context[:1500]
+            
             authors = hit.get("authors", "Unknown Authors")
             arxiv_id = hit.get("arxiv_id", "")
             title_paper = hit.get("title", "Unknown Title")
