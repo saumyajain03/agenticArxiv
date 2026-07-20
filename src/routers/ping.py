@@ -34,6 +34,8 @@ async def health_check(request: Request, settings: SettingsDep, database: Databa
 
     # Database check
     def _check_database():
+        if not database:
+            return ServiceStatus(status="unhealthy", message="Database client not initialized yet")
         with database.get_session() as session:
             session.execute(text("SELECT 1"))
         return ServiceStatus(status="healthy", message="Connected successfully")
@@ -43,7 +45,7 @@ async def health_check(request: Request, settings: SettingsDep, database: Databa
         def _check_pinecone():
             pinecone_client = getattr(request.app.state, "pinecone_client", None)
             if not pinecone_client:
-                return ServiceStatus(status="unhealthy", message="Pinecone client not initialized")
+                return ServiceStatus(status="unhealthy", message="Pinecone client not initialized yet")
             if not pinecone_client.health_check():
                 return ServiceStatus(status="unhealthy", message="Not responding")
             return ServiceStatus(
@@ -53,6 +55,8 @@ async def health_check(request: Request, settings: SettingsDep, database: Databa
         _check_service("pinecone", _check_pinecone)
     else:
         def _check_opensearch():
+            if not opensearch_client:
+                return ServiceStatus(status="unhealthy", message="OpenSearch client not initialized yet")
             if not opensearch_client.health_check():
                 return ServiceStatus(status="unhealthy", message="Not responding")
             stats = opensearch_client.get_index_stats()

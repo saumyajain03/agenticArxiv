@@ -15,7 +15,6 @@ from src.routers.a2a import router as a2a_router
 from src.routers.ask import ask_router, stream_router
 from src.routers.ingest import router as ingest_router
 from src.routers.supervisor_ask import router as supervisor_router
-from src.services.agents.factory import make_agentic_rag_service
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.bedrock_guardrails.factory import make_bedrock_guardrails_service
 from src.services.bedrock_llm.factory import make_bedrock_llm_client
@@ -43,181 +42,204 @@ _mcp_http_app = mcp.http_app(path="/", stateless_http=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan for the API."""
-    # MCP session manager must be started before any requests arrive.
-    # All service init happens inside this context so the manager is alive
-    # for the full duration the app is running.
     async with _mcp_http_app.lifespan(app):
         logger.info("Starting RAG API...")
+
+        # Initialize all attributes as None to prevent crashes during lazy background startup
+        app.state.database = None
+        app.state.pinecone_client = None
+        app.state.opensearch_client = None
+        app.state.arxiv_client = None
+        app.state.pdf_parser = None
+        app.state.embeddings_service = None
+        app.state.llm_client = None
+        app.state.guardrails_service = None
+        app.state.langfuse_tracer = None
+        app.state.cache_client = None
+        app.state.agentic_rag_service = None
+        app.state.supervisor_agent = None
+        app.state.telegram_service = None
+        app.state._telegram_lock_fd = None
 
         settings = get_settings()
         app.state.settings = settings
 
-        # Configure Logfire first — wires stdlib logging bridge + auto-instrumentation.
-        # Must run before any service factories so SQLAlchemy/Redis/httpx are instrumented
-        # before their clients are created.
-        configure_logfire(settings)
-        if settings.logfire.enabled:
+        import asyncio
+
+        async def init_services_async():
+            # Yield to event loop slightly so Uvicorn can finish starting and bind the port
+            await asyncio.sleep(0.5)
             try:
-                logfire.instrument_fastapi(app, request_attributes_mapper=_skip_health)
-            except ValueError:
-                # App already instrumented (common when running test sessions)
-                pass
+                logger.info("Initializing services in background...")
 
-        database = make_database()
-        app.state.database = database
-        logger.info("Database connected")
+                # Configure Logfire first — wires stdlib logging bridge + auto-instrumentation.
+                configure_logfire(settings)
+                if settings.logfire.enabled:
+                    try:
+                        logfire.instrument_fastapi(app, request_attributes_mapper=_skip_health)
+                    except ValueError:
+                        pass
 
-        # Initialize search service (OpenSearch or Pinecone Cloud)
-        app.state.pinecone_client = None
-        app.state.opensearch_client = None
+                database = make_database()
+                app.state.database = database
+                logger.info("Database connected (background)")
 
-        if settings.vector_db_provider == "pinecone":
-            from src.services.embeddings.pinecone_client import PineconeClient
+                # Initialize search service (OpenSearch or Pinecone Cloud)
+                if settings.vector_db_provider == "pinecone":
+                    from src.services.embeddings.pinecone_client import PineconeClient
 
-            logger.info("Initializing Pinecone Cloud vector search client...")
-            pinecone_client = PineconeClient(
-                api_key=settings.pinecone.api_key,
-                index_name=settings.pinecone.index_name,
-                environment=settings.pinecone.environment,
-            )
-            app.state.pinecone_client = pinecone_client
-            if pinecone_client.health_check():
-                logger.info("✓ Pinecone Cloud connected successfully")
-            else:
-                logger.warning("Pinecone Cloud connection failed - search features will be limited")
-        else:
-            logger.info("Initializing OpenSearch search client...")
-            opensearch_client = make_opensearch_client()
-            app.state.opensearch_client = opensearch_client
-
-            if opensearch_client.health_check():
-                logger.info("✓ OpenSearch connected successfully")
-                setup_results = opensearch_client.setup_indices(force=False)
-                if setup_results.get("hybrid_index"):
-                    logger.info("Hybrid index created")
+                    logger.info("Initializing Pinecone Cloud vector search client (background)...")
+                    pinecone_client = PineconeClient(
+                        api_key=settings.pinecone.api_key,
+                        index_name=settings.pinecone.index_name,
+                        environment=settings.pinecone.environment,
+                    )
+                    app.state.pinecone_client = pinecone_client
+                    logger.info("✓ Pinecone Cloud client ready")
                 else:
-                    logger.info("Hybrid index already exists")
+                    logger.info("Initializing OpenSearch search client (background)...")
+                    opensearch_client = make_opensearch_client()
+                    app.state.opensearch_client = opensearch_client
 
-                try:
-                    stats = opensearch_client.client.count(index=opensearch_client.index_name)
-                    logger.info(f"OpenSearch ready: {stats['count']} documents indexed")
-                except Exception:
-                    logger.info("OpenSearch index ready (stats unavailable)")
-            else:
-                logger.warning("OpenSearch connection failed - search features will be limited")
+                    if opensearch_client.health_check():
+                        logger.info("✓ OpenSearch connected successfully")
+                        setup_results = opensearch_client.setup_indices(force=False)
+                        if setup_results.get("hybrid_index"):
+                            logger.info("Hybrid index created")
+                        else:
+                            logger.info("Hybrid index already exists")
 
-        # Initialize other services
-        app.state.arxiv_client = make_arxiv_client()
-        app.state.pdf_parser = make_pdf_parser_service()
-        app.state.embeddings_service = make_embeddings_service()
-        if settings.provider == "bedrock":
-            app.state.llm_client = make_bedrock_llm_client(settings)
-            logger.info(f"LLM provider: AWS Bedrock (model={settings.bedrock.model_id})")
-        else:
-            app.state.llm_client = make_openai_llm_client()
-            logger.info(f"LLM provider: OpenAI (model={settings.openai_model})")
+                        try:
+                            stats = opensearch_client.client.count(index=opensearch_client.index_name)
+                            logger.info(f"OpenSearch ready: {stats['count']} documents indexed")
+                        except Exception:
+                            logger.info("OpenSearch index ready (stats unavailable)")
+                    else:
+                        logger.warning("OpenSearch connection failed - search features will be limited")
 
-        app.state.guardrails_service = make_bedrock_guardrails_service(settings)
-        guardrail_status = (
-            f"guardrail_id={settings.bedrock.guardrail_id}" if settings.bedrock.guardrail_id else "disabled (no guardrail_id)"
-        )
-        logger.info(f"Bedrock Guardrails: {guardrail_status}")
+                # Initialize other services
+                app.state.arxiv_client = make_arxiv_client()
+                app.state.pdf_parser = make_pdf_parser_service()
+                app.state.embeddings_service = make_embeddings_service()
+                if settings.provider == "bedrock":
+                    app.state.llm_client = make_bedrock_llm_client(settings)
+                    logger.info(f"LLM provider: AWS Bedrock (model={settings.bedrock.model_id})")
+                else:
+                    app.state.llm_client = make_openai_llm_client()
+                    logger.info(f"LLM provider: OpenAI (model={settings.openai_model})")
 
-        app.state.langfuse_tracer = make_langfuse_tracer()
-        app.state.cache_client = make_cache_client(settings)
-        logger.info(
-            "Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, LLM, Guardrails, Langfuse, Cache"
-        )
-
-        # Create shared agentic RAG service (used by both MCP and Telegram)
-        agentic_rag_service = make_agentic_rag_service(
-            opensearch_client=getattr(app.state, "opensearch_client", None),
-            pinecone_client=getattr(app.state, "pinecone_client", None),
-            llm_client=app.state.llm_client,
-            embeddings_client=app.state.embeddings_service,
-            langfuse_tracer=app.state.langfuse_tracer,
-            guardrails_service=app.state.guardrails_service,
-        )
-        app.state.agentic_rag_service = agentic_rag_service
-
-        # Supervisor agent — reuses existing agentic_rag_service and context
-        from src.services.agents import Context, SupervisorAgent
-
-        supervisor_context = Context(
-            llm_client=app.state.llm_client,
-            opensearch_client=getattr(app.state, "opensearch_client", None),
-            pinecone_client=getattr(app.state, "pinecone_client", None),
-            embeddings_client=app.state.embeddings_service,
-            langfuse_tracer=app.state.langfuse_tracer,
-            guardrails_service=app.state.guardrails_service,
-            model_name=(settings.bedrock.model_id if settings.provider == "bedrock" else settings.openai_model),
-        )
-        app.state.supervisor_agent = SupervisorAgent(
-            context=supervisor_context,
-            agentic_rag_service=agentic_rag_service,
-        )
-        logger.info("SupervisorAgent initialized")
-
-        # Wire MCP context so tools can reach all services
-        if settings.mcp.enabled:
-            set_mcp_context(
-                MCPContext(
-                    opensearch_client=getattr(app.state, "opensearch_client", None),
-                    embeddings_client=app.state.embeddings_service,
-                    llm_client=app.state.llm_client,
-                    langfuse_tracer=app.state.langfuse_tracer,
-                    agentic_rag_service=agentic_rag_service,
-                    database=app.state.database,
+                app.state.guardrails_service = make_bedrock_guardrails_service(settings)
+                guardrail_status = (
+                    f"guardrail_id={settings.bedrock.guardrail_id}" if settings.bedrock.guardrail_id else "disabled (no guardrail_id)"
                 )
-            )
-            logger.info(f"MCP server context (mounted at {settings.mcp.path})")
+                logger.info(f"Bedrock Guardrails: {guardrail_status}")
 
-        # Initialize Telegram bot (Phase 7)
-        # Only one worker process may run the polling bot; others skip.
-        # fcntl.flock gives an exclusive non-blocking lock; kernel releases it when the
-        # process exits, so a container restart cleanly re-acquires it.
-        _telegram_lock_fd = None
-        _telegram_lock_acquired = False
-        try:
-            _telegram_lock_fd = open("/tmp/telegram_bot.lock", "w")
-            fcntl.flock(_telegram_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            _telegram_lock_acquired = True
-        except IOError:
-            logger.info("Telegram bot lock held by another worker — skipping in this worker")
+                app.state.langfuse_tracer = make_langfuse_tracer()
+                app.state.cache_client = make_cache_client(settings)
+                logger.info(
+                    "Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, LLM, Guardrails, Langfuse, Cache"
+                )
 
-        if _telegram_lock_acquired:
-            telegram_service = make_telegram_service(
-                opensearch_client=getattr(app.state, "opensearch_client", None),
-                embeddings_client=app.state.embeddings_service,
-                llm_client=app.state.llm_client,
-                cache_client=app.state.cache_client,
-                langfuse_tracer=app.state.langfuse_tracer,
-                agentic_rag_service=agentic_rag_service,
-            )
+                # Create shared agentic RAG service (used by both MCP and Telegram)
+                from src.services.agents.factory import make_agentic_rag_service
+                agentic_rag_service = make_agentic_rag_service(
+                    opensearch_client=getattr(app.state, "opensearch_client", None),
+                    pinecone_client=getattr(app.state, "pinecone_client", None),
+                    llm_client=app.state.llm_client,
+                    embeddings_client=app.state.embeddings_service,
+                    langfuse_tracer=app.state.langfuse_tracer,
+                    guardrails_service=app.state.guardrails_service,
+                )
+                app.state.agentic_rag_service = agentic_rag_service
 
-            if telegram_service:
-                app.state.telegram_service = telegram_service
+                # Supervisor agent — reuses existing agentic_rag_service and context
+                from src.services.agents import Context, SupervisorAgent
+
+                supervisor_context = Context(
+                    llm_client=app.state.llm_client,
+                    opensearch_client=getattr(app.state, "opensearch_client", None),
+                    pinecone_client=getattr(app.state, "pinecone_client", None),
+                    embeddings_client=app.state.embeddings_service,
+                    langfuse_tracer=app.state.langfuse_tracer,
+                    guardrails_service=app.state.guardrails_service,
+                    model_name=(settings.bedrock.model_id if settings.provider == "bedrock" else settings.openai_model),
+                )
+                app.state.supervisor_agent = SupervisorAgent(
+                    context=supervisor_context,
+                    agentic_rag_service=agentic_rag_service,
+                )
+                logger.info("SupervisorAgent initialized")
+
+                # Wire MCP context so tools can reach all services
+                if settings.mcp.enabled:
+                    set_mcp_context(
+                        MCPContext(
+                            opensearch_client=getattr(app.state, "opensearch_client", None),
+                            embeddings_client=app.state.embeddings_service,
+                            llm_client=app.state.llm_client,
+                            langfuse_tracer=app.state.langfuse_tracer,
+                            agentic_rag_service=agentic_rag_service,
+                            database=app.state.database,
+                        )
+                    )
+                    logger.info(f"MCP server context (mounted at {settings.mcp.path})")
+
+                # Initialize Telegram bot (Phase 7)
+                _telegram_lock_fd = None
+                _telegram_lock_acquired = False
                 try:
-                    await telegram_service.start()
-                    logger.info("Telegram bot started successfully")
-                except Exception as e:
-                    logger.error(f"Failed to start Telegram bot: {e}")
-            else:
-                logger.info("Telegram bot not configured - skipping initialization")
+                    _telegram_lock_fd = open("/tmp/telegram_bot.lock", "w")
+                    fcntl.flock(_telegram_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    _telegram_lock_acquired = True
+                    app.state._telegram_lock_fd = _telegram_lock_fd
+                except IOError:
+                    logger.info("Telegram bot lock held by another worker — skipping in this worker")
 
-        logger.info("API ready")
+                if _telegram_lock_acquired:
+                    telegram_service = make_telegram_service(
+                        opensearch_client=getattr(app.state, "opensearch_client", None),
+                        embeddings_client=app.state.embeddings_service,
+                        llm_client=app.state.llm_client,
+                        cache_client=app.state.cache_client,
+                        langfuse_tracer=app.state.langfuse_tracer,
+                        agentic_rag_service=agentic_rag_service,
+                    )
+
+                    if telegram_service:
+                        app.state.telegram_service = telegram_service
+                        try:
+                            await telegram_service.start()
+                            logger.info("Telegram bot started successfully")
+                        except Exception as e:
+                            logger.error(f"Failed to start Telegram bot: {e}")
+                    else:
+                        logger.info("Telegram bot not configured - skipping initialization")
+
+                logger.info("Background initialization completed successfully. RAG API is fully ready.")
+            except Exception as e:
+                logger.error(f"Critical error during background initialization: {e}")
+
+        # Start the background task
+        asyncio.create_task(init_services_async())
+        logger.info("Lifespan startup finished, yielding to Uvicorn port binding...")
         yield
 
         # Cleanup
-        if hasattr(app.state, "telegram_service") and app.state.telegram_service:
+        if getattr(app.state, "telegram_service", None):
             await app.state.telegram_service.stop()
             logger.info("Telegram bot stopped")
 
-        if _telegram_lock_fd:
-            fcntl.flock(_telegram_lock_fd, fcntl.LOCK_UN)
-            _telegram_lock_fd.close()
+        lock_fd = getattr(app.state, "_telegram_lock_fd", None)
+        if lock_fd:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+            except Exception:
+                pass
 
-        database.teardown()
+        database = getattr(app.state, "database", None)
+        if database:
+            database.teardown()
         logger.info("API shutdown complete")
 
 

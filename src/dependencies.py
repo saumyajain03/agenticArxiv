@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Annotated, Generator, Optional
 if TYPE_CHECKING:
     from fastapi import Depends, Request
     from sqlalchemy.orm import Session
+
+    from src.services.agents.agentic_rag import AgenticRAGService
 else:
     try:
         from fastapi import Depends, Request
@@ -13,8 +15,6 @@ else:
 
 from src.config import Settings
 from src.db.interfaces.base import BaseDatabase
-from src.services.agents.agentic_rag import AgenticRAGService
-from src.services.agents.factory import make_agentic_rag_service
 from src.services.arxiv.client import ArxivClient
 from src.services.bedrock_guardrails.service import BedrockGuardrailsService
 from src.services.cache.client import CacheClient
@@ -45,6 +45,9 @@ def get_database(request: Request) -> BaseDatabase:
 
 def get_db_session(database: Annotated[BaseDatabase, Depends(get_database)]) -> Generator[Session, None, None]:
     """Get database session dependency."""
+    if not database:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Database initializing, please try again in a few seconds.")
     with database.get_session() as session:
         yield session
 
@@ -59,34 +62,41 @@ def get_pinecone_client(request: Request) -> Optional[PineconeClient]:
     return getattr(request.app.state, "pinecone_client", None)
 
 
+def _check_initialized(val, name: str):
+    if val is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail=f"Service '{name}' is still initializing. Please retry in a few seconds.")
+    return val
+
+
 def get_arxiv_client(request: Request) -> ArxivClient:
     """Get arXiv client from the request state."""
-    return request.app.state.arxiv_client
+    return _check_initialized(request.app.state.arxiv_client, "ArxivClient")
 
 
 def get_pdf_parser(request: Request) -> PDFParserService:
     """Get PDF parser service from the request state."""
-    return request.app.state.pdf_parser
+    return _check_initialized(request.app.state.pdf_parser, "PDFParser")
 
 
 def get_embeddings_service(request: Request) -> JinaEmbeddingsClient:
     """Get embeddings service from the request state."""
-    return request.app.state.embeddings_service
+    return _check_initialized(request.app.state.embeddings_service, "EmbeddingsService")
 
 
 def get_llm_client(request: Request) -> LLMClientProtocol:
     """Get LLM client from the request state (OpenAI or Bedrock depending on PROVIDER)."""
-    return request.app.state.llm_client
+    return _check_initialized(request.app.state.llm_client, "LLMClient")
 
 
 def get_guardrails_service(request: Request) -> BedrockGuardrailsService:
     """Get Bedrock Guardrails service from the request state."""
-    return request.app.state.guardrails_service
+    return _check_initialized(request.app.state.guardrails_service, "GuardrailsService")
 
 
 def get_langfuse_tracer(request: Request) -> LangfuseTracer:
     """Get Langfuse tracer from the request state."""
-    return request.app.state.langfuse_tracer
+    return _check_initialized(request.app.state.langfuse_tracer, "LangfuseTracer")
 
 
 def get_cache_client(request: Request) -> CacheClient | None:
@@ -122,8 +132,10 @@ def get_agentic_rag_service(
     langfuse: LangfuseDep,
     guardrails: GuardrailsDep,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> AgenticRAGService:
+) -> "AgenticRAGService":
     """Get agentic RAG service."""
+    from src.services.agents.factory import make_agentic_rag_service
+
     opensearch = getattr(request.app.state, "opensearch_client", None)
     pinecone = getattr(request.app.state, "pinecone_client", None)
     return make_agentic_rag_service(
@@ -137,4 +149,4 @@ def get_agentic_rag_service(
     )
 
 
-AgenticRAGDep = Annotated[AgenticRAGService, Depends(get_agentic_rag_service)]
+AgenticRAGDep = Annotated["AgenticRAGService", Depends(get_agentic_rag_service)]

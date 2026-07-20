@@ -1,15 +1,17 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from fastmcp import FastMCP
 
 from src.db.interfaces.base import BaseDatabase
-from src.services.agents.agentic_rag import AgenticRAGService
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 from src.services.openai_llm.client import OpenAILLMClient
 from src.services.opensearch.client import OpenSearchClient
+
+if TYPE_CHECKING:
+    from src.services.agents.agentic_rag import AgenticRAGService
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ class MCPContext:
     embeddings_client: JinaEmbeddingsClient
     llm_client: OpenAILLMClient
     langfuse_tracer: Optional[LangfuseTracer]
-    agentic_rag_service: AgenticRAGService
+    agentic_rag_service: "AgenticRAGService"
     database: BaseDatabase
 
 
