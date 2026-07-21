@@ -36,9 +36,26 @@ class RerankerService:
             logger.info("Reranking is disabled. Documents will remain sorted by search index score.")
 
     def _get_model(self):
-        """Lazy load the CrossEncoder model."""
-        if self._model is None and self.enabled:
+        """Lazy load the CrossEncoder model.
+
+        The ``from sentence_transformers import CrossEncoder`` line below is
+        intentionally inside this method (not at module level) so it only
+        executes the first time reranking is actually requested.
+
+        On Render (``RENDER=true``) ``self.enabled`` is forced to ``False``
+        in ``__init__``, so this method returns ``None`` immediately and the
+        import is never reached.
+        """
+        if not self.enabled:
+            return None
+        if self._model is None:
             try:
+                # Narrow import: CrossEncoder lives in
+                # sentence_transformers.cross_encoder — importing only this
+                # submodule avoids triggering the full sentence_transformers
+                # package __init__ (which itself imports transformers).
+                # Note: on Render this branch is unreachable because
+                # self.enabled is always False.
                 from sentence_transformers import CrossEncoder
 
                 logger.info(f"Loading sentence-transformers CrossEncoder: {self.model_name}...")
@@ -48,6 +65,7 @@ class RerankerService:
                 logger.error(f"Failed to load local CrossEncoder model: {e}. Reranker will be disabled.")
                 self.enabled = False
         return self._model
+
 
     def rerank(self, query: str, documents: List[Dict[str, Any]], top_k: int = 5) -> List[Dict[str, Any]]:
         """Rerank a list of retrieved document chunks against the search query.
