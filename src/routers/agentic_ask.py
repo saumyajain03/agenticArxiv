@@ -16,6 +16,26 @@ from src.services.pdf_generator.generator import MarkdownPDFGenerator
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_json_dumps(obj) -> str:
+    """
+    json.dumps with a fallback for non-serializable types.
+    If any value cannot be serialised, it is replaced with str(value).
+    A silent TypeError here would close the SSE stream without sending an
+    error event, appearing to the browser as a plain connection drop.
+    """
+    def _default(o):
+        try:
+            # Pydantic v1/v2 models
+            if hasattr(o, 'model_dump'):
+                return o.model_dump()
+            if hasattr(o, 'dict'):
+                return o.dict()
+        except Exception:
+            pass
+        return str(o)
+    return json.dumps(obj, default=_default)
+
 router = APIRouter(prefix="/api/v1", tags=["agentic-rag"])
 
 
@@ -169,8 +189,17 @@ async def ask_stream_logs(
       {"log": "<message>"}              — pipeline stage log line
       {"result": {...}, "done": true}   — final answer payload
       {"error": "<msg>", "traceback": "..."}  — fatal error with full tb
+
+    NOTE: FastAPI resolves all Depends() BEFORE this function body runs.
+    If any dependency raises (e.g. AgenticRAGService still initialising),
+    FastAPI returns a non-SSE JSON error response and log_generator() is
+    never called — no [STAGE] ENTRY log appears.
     """
+    # Log entry immediately so we know the route handler was reached at all.
+    # If this line never appears in Render logs the request is dying during
+    # dependency injection — before this function body executes.
     req_id = str(uuid.uuid4())[:8]
+    logger.info("[STAGE] ENTRY ask_stream_logs (route body) | req=%s | query=%r", req_id, query[:80])
 
     async def log_generator():
         # ── STAGE 0: endpoint entered ────────────────────────────────────────
@@ -267,7 +296,21 @@ async def ask_stream_logs(
                     req_id, elapsed_ms, len(result.get("answer", "")),
                 )
                 yield f"data: {json.dumps({'log': f'[{req_id}] ✓ STREAM COMPLETE — {elapsed_ms:.0f}ms'})}\n\n"
-                yield f"data: {json.dumps({'result': result, 'done': True})}\n\n"
+                # Use _safe_json_dumps: if result contains a non-serialisable
+                # object (Pydantic model, dataclass, datetime, etc.) a plain
+                # json.dumps() call would raise TypeError inside the generator,
+                # closing the SSE stream with no error event — the browser sees
+                # only a connection drop and fires onerror.
+                try:
+                    payload = _safe_json_dumps({'result': result, 'done': True})
+                except Exception as serial_exc:
+                    tb = traceback.format_exc()
+                    logger.error(
+                        "[STAGE] SERIALISATION ERROR | req=%s | error=%s\n%s",
+                        req_id, repr(serial_exc), tb,
+                    )
+                    payload = json.dumps({'error': f'Result serialisation failed: {serial_exc}', 'traceback': tb})
+                yield f"data: {payload}\n\n"
 
             except asyncio.CancelledError:
                 logger.warning("[STAGE] Task cancelled | req=%s", req_id)

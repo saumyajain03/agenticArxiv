@@ -1663,22 +1663,42 @@
                 const eventSource = new EventSource(`/api/v1/ask-stream-logs?query=${encodeURIComponent(query)}`);
 
                 eventSource.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    
-                    if (data.done) {
-                        eventSource.close();
-                        sseResult = data.result;
-                        sseDone = true;
-                    }
-                    
-                    if (data.error) {
-                        eventSource.close();
-                        sseError = data.error;
-                        sseDone = true;
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        if (data.done) {
+                            // Close FIRST so the browser doesn't attempt an
+                            // automatic reconnect, which would fire onerror.
+                            eventSource.close();
+                            sseResult = data.result;
+                            sseDone = true;
+                            return;
+                        }
+
+                        if (data.error) {
+                            eventSource.close();
+                            sseError = data.error;
+                            sseDone = true;
+                            return;
+                        }
+
+                        if (data.log) {
+                            appendLog('Agent', 'INFO', data.log);
+                        }
+                    } catch (parseErr) {
+                        // Malformed SSE event — log and continue
+                        console.warn('SSE parse error:', parseErr, event.data);
                     }
                 };
 
                 eventSource.onerror = function(err) {
+                    // Guard: if sseDone is already true we received a clean
+                    // done/error event and called close() ourselves.  The
+                    // browser still fires onerror when the server closes the
+                    // TCP connection after our close() call — this is a false
+                    // positive.  Ignore it.
+                    if (sseDone) return;
+
                     eventSource.close();
                     sseError = 'Log stream connection lost.';
                     sseDone = true;
