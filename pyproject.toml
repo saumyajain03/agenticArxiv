@@ -16,7 +16,6 @@ dependencies = [
     "httpx>=0.28.1",
     "docling>=2.43.0",
     "python-dateutil>=2.9.0.post0",
-    "sentence-transformers>=5.1.0",
     "fastmcp>=2.0.0",
     "gradio>=4.0.0",
     "langfuse>=4.0.0",
@@ -39,6 +38,13 @@ dependencies = [
     "reportlab>=5.0.0",
 ]
 readme = "README.md"
+
+[project.optional-dependencies]
+# Install with: pip install -e ".[reranker]"
+# The local CrossEncoder reranker is disabled on Render (RENDER=true) and costs
+# ~1.1s of startup time via the transformers transitive import chain.
+# Only install locally when you want to test/use the reranker.
+reranker = ["sentence-transformers>=5.1.0,<6.0.0"]
 
 [dependency-groups]
 dev = [
