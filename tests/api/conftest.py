@@ -40,8 +40,11 @@ async def client():
         patch("src.main.make_cache_client", return_value=MagicMock()),
         patch("src.main.make_telegram_service", return_value=None),
     ):
-        async with LifespanManager(app) as manager:
+        async with LifespanManager(app):
+            init_task = getattr(app.state, "_init_task", None)
+            if init_task:
+                await init_task
             async with AsyncClient(
-                transport=ASGITransport(app=manager.app), base_url="http://test"
+                transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
                 yield client

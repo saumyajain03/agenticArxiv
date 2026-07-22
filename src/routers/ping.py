@@ -54,7 +54,7 @@ async def safe_health_check(fn, timeout: float = 3.0) -> bool:
 # restart the service before it has had a chance to finish initialising.
 # ---------------------------------------------------------------------------
 
-@router.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse, tags=["Health"])
+@router.api_route("/health", methods=["GET"], response_model=HealthResponse, tags=["Health"])
 async def health_check(request: Request, settings: SettingsDep) -> HealthResponse:
     """
     Readiness health check.

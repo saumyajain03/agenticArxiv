@@ -216,11 +216,16 @@ async def lifespan(app: FastAPI):
                         logger.info("Telegram bot not configured - skipping initialization")
 
                 logger.info("Background initialization completed successfully. RAG API is fully ready.")
+                app.state.init_error = None
             except Exception as e:
-                logger.error(f"Critical error during background initialization: {e}")
+                import traceback
+                app.state.init_error = e
+                app.state.init_error_traceback = traceback.format_exc()
+                logger.error(f"Critical error during background initialization: {e}\n{app.state.init_error_traceback}", exc_info=True)
 
         # Start the background task
-        asyncio.create_task(init_services_async())
+        init_task = asyncio.create_task(init_services_async())
+        app.state._init_task = init_task
         logger.info("Lifespan startup finished, yielding to Uvicorn port binding...")
         yield
 

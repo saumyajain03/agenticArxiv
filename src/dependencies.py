@@ -63,40 +63,81 @@ def get_pinecone_client(request: Request) -> Optional[PineconeClient]:
 
 
 import logging
+import traceback
+
 logger = logging.getLogger(__name__)
 
-def _check_initialized(val, name: str):
+def _check_initialized(val, name: str, request: Optional[Request] = None):
     logger.debug(f"ENTRY: checking dependency {name}")
     if val is None:
-        logger.error(f"EXCEPTION: dependency {name} is None (uninitialized)")
+        init_err = getattr(request.app.state, "init_error", None) if request else None
+        err_msg = f"Dependency '{name}' is unavailable."
+        if init_err:
+            err_msg += f" Startup error: {init_err}"
+        logger.error(f"EXCEPTION: {err_msg}")
         from fastapi import HTTPException
-        raise HTTPException(status_code=503, detail=f"Service '{name}' is still initializing. Please retry in a few seconds.")
+        raise HTTPException(status_code=500, detail=err_msg)
     logger.debug(f"EXIT: dependency {name} is ready")
     return val
 
 def get_arxiv_client(request: Request) -> ArxivClient:
     logger.debug("DI: get_arxiv_client")
-    return _check_initialized(request.app.state.arxiv_client, "ArxivClient")
+    val = getattr(request.app.state, "arxiv_client", None)
+    if val is None:
+        from src.services.arxiv.factory import make_arxiv_client
+        val = make_arxiv_client()
+        request.app.state.arxiv_client = val
+    return _check_initialized(val, "ArxivClient", request)
 
 def get_pdf_parser(request: Request) -> PDFParserService:
     logger.debug("DI: get_pdf_parser")
-    return _check_initialized(request.app.state.pdf_parser, "PDFParser")
+    val = getattr(request.app.state, "pdf_parser", None)
+    if val is None:
+        from src.services.pdf_parser.factory import make_pdf_parser_service
+        val = make_pdf_parser_service()
+        request.app.state.pdf_parser = val
+    return _check_initialized(val, "PDFParser", request)
 
 def get_embeddings_service(request: Request) -> JinaEmbeddingsClient:
     logger.debug("DI: get_embeddings_service")
-    return _check_initialized(request.app.state.embeddings_service, "EmbeddingsService")
+    val = getattr(request.app.state, "embeddings_service", None)
+    if val is None:
+        from src.services.embeddings.factory import make_embeddings_service
+        val = make_embeddings_service()
+        request.app.state.embeddings_service = val
+    return _check_initialized(val, "EmbeddingsService", request)
 
 def get_llm_client(request: Request) -> LLMClientProtocol:
     logger.debug("DI: get_llm_client")
-    return _check_initialized(request.app.state.llm_client, "LLMClient")
+    val = getattr(request.app.state, "llm_client", None)
+    if val is None:
+        settings = get_settings()
+        if settings.provider == "bedrock":
+            from src.services.bedrock_llm.factory import make_bedrock_llm_client
+            val = make_bedrock_llm_client(settings)
+        else:
+            from src.services.openai_llm.factory import make_openai_llm_client
+            val = make_openai_llm_client()
+        request.app.state.llm_client = val
+    return _check_initialized(val, "LLMClient", request)
 
 def get_guardrails_service(request: Request) -> BedrockGuardrailsService:
     logger.debug("DI: get_guardrails_service")
-    return _check_initialized(request.app.state.guardrails_service, "GuardrailsService")
+    val = getattr(request.app.state, "guardrails_service", None)
+    if val is None:
+        from src.services.bedrock_guardrails.factory import make_bedrock_guardrails_service
+        val = make_bedrock_guardrails_service(get_settings())
+        request.app.state.guardrails_service = val
+    return _check_initialized(val, "GuardrailsService", request)
 
 def get_langfuse_tracer(request: Request) -> LangfuseTracer:
     logger.debug("DI: get_langfuse_tracer")
-    return _check_initialized(request.app.state.langfuse_tracer, "LangfuseTracer")
+    val = getattr(request.app.state, "langfuse_tracer", None)
+    if val is None:
+        from src.services.langfuse.factory import make_langfuse_tracer
+        val = make_langfuse_tracer()
+        request.app.state.langfuse_tracer = val
+    return _check_initialized(val, "LangfuseTracer", request)
 
 
 def get_cache_client(request: Request) -> CacheClient | None:
@@ -128,15 +169,44 @@ TelegramDep = Annotated[Optional[TelegramBot], Depends(get_telegram_service)]
 def get_agentic_rag_service(
     request: Request,
 ) -> "AgenticRAGService":
-    """Get the shared agentic RAG service singleton from app state."""
+    """Get the shared agentic RAG service singleton from app state, with lazy initialization fallback."""
     service = getattr(request.app.state, "agentic_rag_service", None)
-    if service is None:
-        from fastapi import HTTPException
-        raise HTTPException(
-            status_code=503,
-            detail="AgenticRAGService is still initializing. Please retry in a few seconds.",
+    if service is not None:
+        return service
+
+    logger.info("AgenticRAGService is None in app state. Attempting lazy on-demand initialization...")
+    try:
+        from src.services.agents.factory import make_agentic_rag_service
+        
+        # Ensure underlying components are loaded
+        llm_client = getattr(request.app.state, "llm_client", None) or get_llm_client(request)
+        embeddings_service = getattr(request.app.state, "embeddings_service", None) or get_embeddings_service(request)
+        langfuse_tracer = getattr(request.app.state, "langfuse_tracer", None) or get_langfuse_tracer(request)
+        guardrails_service = getattr(request.app.state, "guardrails_service", None) or get_guardrails_service(request)
+
+        service = make_agentic_rag_service(
+            opensearch_client=getattr(request.app.state, "opensearch_client", None),
+            pinecone_client=getattr(request.app.state, "pinecone_client", None),
+            llm_client=llm_client,
+            embeddings_client=embeddings_service,
+            langfuse_tracer=langfuse_tracer,
+            guardrails_service=guardrails_service,
         )
-    return service
+        request.app.state.agentic_rag_service = service
+        logger.info("✓ AgenticRAGService lazily initialized successfully")
+        return service
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error(f"Lazy initialization of AgenticRAGService failed: {e}\n{tb}", exc_info=True)
+        from fastapi import HTTPException
+        init_err = getattr(request.app.state, "init_error", None)
+        detail_msg = f"AgenticRAGService initialization failed: {e}"
+        if init_err:
+            detail_msg += f" (Background startup error: {init_err})"
+        raise HTTPException(
+            status_code=500,
+            detail=detail_msg,
+        )
 
 
 AgenticRAGDep = Annotated["AgenticRAGService", Depends(get_agentic_rag_service)]

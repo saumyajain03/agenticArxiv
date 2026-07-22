@@ -2,11 +2,12 @@ import os
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
 
 
 class BaseConfigSettings(BaseSettings):
@@ -136,7 +137,10 @@ class RedisSettings(BaseConfigSettings):
         case_sensitive=False,
     )
 
-    url: str = "redis://localhost:6379"
+    url: str = Field(
+        default="redis://localhost:6379",
+        validation_alias=AliasChoices("url", "REDIS__URL", "REDIS_URL", "REDIS_TLS_URL"),
+    )
     ttl_hours: int = 6
 
 
@@ -208,9 +212,18 @@ class PineconeSettings(BaseConfigSettings):
         case_sensitive=False,
     )
 
-    api_key: str = ""
-    index_name: str = "arxiv-papers"
-    environment: str = "us-east-1"
+    api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("api_key", "PINECONE__API_KEY", "PINECONE_API_KEY"),
+    )
+    index_name: str = Field(
+        default="arxiv-papers",
+        validation_alias=AliasChoices("index_name", "PINECONE__INDEX_NAME", "PINECONE_INDEX_NAME"),
+    )
+    environment: str = Field(
+        default="us-east-1",
+        validation_alias=AliasChoices("environment", "PINECONE__ENVIRONMENT", "PINECONE_ENVIRONMENT", "PINECONE_REGION"),
+    )
 
 
 class Settings(BaseConfigSettings):
@@ -219,24 +232,47 @@ class Settings(BaseConfigSettings):
     environment: Literal["development", "staging", "production"] = "development"
     service_name: str = "rag-api"
 
-    postgres_database_url: str = "postgresql://rag_user:rag_password@localhost:5432/rag_db"
+    postgres_database_url: str = Field(
+        default="postgresql://rag_user:rag_password@localhost:5432/rag_db",
+        validation_alias=AliasChoices(
+            "postgres_database_url", "POSTGRES_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL", "POSTGRESQL_DATABASE_URL"
+        ),
+    )
     postgres_echo_sql: bool = False
     postgres_pool_size: int = 5
     postgres_max_overflow: int = 0
 
-    openai_api_key: str = ""
-    openai_base_url: str = "https://openrouter.ai/api/v1"
-    openai_model: str = "google/gemini-2.5-flash"  # OpenRouter Gemini 2.5 Flash
+    openai_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("openai_api_key", "OPENAI_API_KEY"),
+    )
+    openai_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        validation_alias=AliasChoices("openai_base_url", "OPENAI_BASE_URL"),
+    )
+    openai_model: str = Field(
+        default="google/gemini-2.5-flash",
+        validation_alias=AliasChoices("openai_model", "OPENAI_MODEL"),
+    )
     openai_timeout: int = 300
 
     # LLM provider: "openai" or "bedrock"
-    provider: str = "openai"
+    provider: str = Field(
+        default="openai",
+        validation_alias=AliasChoices("provider", "PROVIDER", "LLM_PROVIDER"),
+    )
 
     # Vector search provider: "opensearch" or "pinecone"
-    vector_db_provider: str = "opensearch"
+    vector_db_provider: str = Field(
+        default="opensearch",
+        validation_alias=AliasChoices("vector_db_provider", "VECTOR_DB_PROVIDER"),
+    )
 
     # Jina AI embeddings configuration
-    jina_api_key: str = ""
+    jina_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("jina_api_key", "JINA_API_KEY"),
+    )
 
     arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
     pdf_parser: PDFParserSettings = Field(default_factory=PDFParserSettings)

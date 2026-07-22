@@ -18,7 +18,7 @@ async def hybrid_search(
     Hybrid search endpoint supporting multiple search modes.
     """
     try:
-        if not opensearch_client.health_check():
+        if not opensearch_client or not opensearch_client.health_check():
             raise HTTPException(status_code=503, detail="Search service is currently unavailable")
 
         query_embedding = None
