@@ -63,41 +63,73 @@ class PineconeClient:
             raise
 
     def query_similarity(
-        self, vector: List[float], top_k: int = 5, categories: Optional[List[str]] = None
+        self,
+        vector: List[float],
+        top_k: int = 5,
+        categories: Optional[List[str]] = None,
+        namespace: str = "",
     ) -> List[Dict[str, Any]]:
         """Query Pinecone for top K most similar vectors.
 
         :param vector: The query embedding vector
         :param top_k: Number of results to return
         :param categories: Filter by arXiv categories
+        :param namespace: Pinecone namespace (default: "")
         :returns: List of matching document hits with metadata (OpenSearch-compatible)
         """
         try:
-            # Build filters if categories are specified
             filter_dict = {}
             if categories:
-                # Pinecone filter format: {"category": {"$in": categories}}
                 filter_dict["category"] = {"$in": categories}
 
+            logger.info("[PINECONE QUERY PAYLOAD]")
+            logger.info(f"  Index: {self.index_name}")
+            logger.info(f"  Namespace: '{namespace}'")
+            logger.info(f"  Top_k: {top_k}")
+            logger.info(f"  Vector dim: {len(vector)}")
+            logger.info(f"  Include metadata: True")
+            logger.info(f"  Filter: {filter_dict if filter_dict else None}")
+
             response = self.index.query(
-                vector=vector, top_k=top_k, include_metadata=True, filter=filter_dict if filter_dict else None
+                vector=vector,
+                top_k=top_k,
+                include_metadata=True,
+                filter=filter_dict if filter_dict else None,
+                namespace=namespace,
             )
+
+            # If filtering by category returned 0 hits, retry without filter to avoid total failure due to missing metadata key
+            if not response.matches and filter_dict:
+                logger.warning("[PINECONE] Filter returned 0 hits. Retrying query without category filter...")
+                response = self.index.query(
+                    vector=vector,
+                    top_k=top_k,
+                    include_metadata=True,
+                    namespace=namespace,
+                )
+
+            logger.info(f"[PINECONE RESPONSE] Matches count: {len(response.matches)}")
+            for idx, match in enumerate(response.matches):
+                meta = match.metadata or {}
+                logger.info(
+                    f"  Match {idx+1}: ID={match.id}, Score={match.score:.4f}, ArxivID={meta.get('arxiv_id') or meta.get('paper_id')}, Title={meta.get('title', '')[:50]}"
+                )
 
             # Map matches into general RAG hit dictionaries for compatibility
             hits = []
             for match in response.matches:
                 meta = match.metadata or {}
-                # Match OpenSearch flat hit structure for downstream parser compatibility
+                arxiv_id = meta.get("arxiv_id") or meta.get("paper_id") or match.id.split("_chunk_")[0]
                 hits.append(
                     {
                         "chunk_id": match.id,
                         "score": match.score,
-                        "chunk_text": meta.get("text", ""),
-                        "arxiv_id": meta.get("paper_id", ""),
+                        "chunk_text": meta.get("text", "") or meta.get("chunk_text", ""),
+                        "arxiv_id": arxiv_id,
                         "title": meta.get("title", ""),
                         "authors": meta.get("authors", ""),
-                        "url": meta.get("url", ""),
-                        "section_title": meta.get("section", ""),
+                        "url": meta.get("url") or f"https://arxiv.org/pdf/{arxiv_id}.pdf",
+                        "section_title": meta.get("section") or meta.get("section_title", ""),
                         "chunk_index": int(meta.get("chunk_index", 0)),
                         "parent_text": meta.get("parent_text", ""),
                     }
@@ -105,5 +137,5 @@ class PineconeClient:
 
             return hits
         except Exception as e:
-            logger.error(f"Error querying similarity from Pinecone: {e}")
+            logger.error(f"Error querying similarity from Pinecone: {e}", exc_info=True)
             raise

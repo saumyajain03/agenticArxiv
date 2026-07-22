@@ -30,9 +30,16 @@ async def ainvoke_writer_step(
     metadata = state.get("metadata", {})
     retrieved_documents = metadata.get("retrieved_documents", {})
 
-    if not research_plan or not retrieved_documents:
-        logger.warning("No research plan or retrieved documents. Skipping writer node.")
-        return {}
+    # Check if total hits across all sections is 0
+    total_retrieved = sum(len(hits) for hits in retrieved_documents.values())
+    if not research_plan or total_retrieved == 0:
+        logger.warning("No source papers retrieved across any section. Returning friendly fallback message.")
+        fallback_msg = "No indexed papers matched your query. This paper is not currently indexed. Please ingest it first."
+        fallback_drafts = {
+            sec.get("title", "Overview"): f"### {sec.get('title', 'Overview')}\n\n{fallback_msg}"
+            for sec in research_plan
+        } if research_plan else {"Overview": f"### Overview\n\n{fallback_msg}"}
+        return {"section_drafts": fallback_drafts}
 
     async def draft_section(section: Dict[str, Any]) -> Dict[str, str]:
         """Draft a single literature review section using the retrieved document contexts."""

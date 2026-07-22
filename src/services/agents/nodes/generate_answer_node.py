@@ -36,7 +36,13 @@ async def ainvoke_generate_answer_step(
     context = get_latest_context(state["messages"])
 
     # Count sources from relevant_sources
-    sources_count = len(state.get("relevant_sources", []))
+    sources = state.get("relevant_sources", [])
+    sources_count = len(sources)
+
+    if sources_count == 0:
+        logger.info("No sources retrieved (sources_count=0). Returning friendly unsupported message.")
+        fallback_msg = "No indexed papers matched your query. This paper is not currently indexed. Please ingest it first."
+        return {"messages": [AIMessage(content=fallback_msg)]}
 
     if not context:
         context = "No relevant documents found."

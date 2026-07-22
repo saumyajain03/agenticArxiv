@@ -128,12 +128,20 @@ class HybridIndexingService:
                     meta = {
                         "text": data["chunk_text"],
                         "paper_id": data["arxiv_id"],
+                        "arxiv_id": data["arxiv_id"],
                         "title": data["title"],
                         "authors": data["authors"],
                         "url": f"https://arxiv.org/pdf/{data['arxiv_id']}.pdf",
                         "section": data["section_title"] or "",
                         "chunk_index": int(data["chunk_index"]),
                         "parent_text": data["parent_text"] or "",
+                        "categories": data.get("categories", []),
+                        "category": (
+                            data.get("categories", ["cs.AI"])[0]
+                            if isinstance(data.get("categories"), list) and data.get("categories")
+                            else "cs.AI"
+                        ),
+                        "published_date": str(data.get("published_date") or ""),
                     }
                     pinecone_vectors.append({"id": vector_id, "values": c["embedding"], "metadata": meta})
 
