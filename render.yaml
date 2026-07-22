@@ -34,3 +34,38 @@ services:
         sync: false # User enters their Jina API Key in the Render dashboard
       - key: POSTGRES_DATABASE_URL
         sync: false # User enters their Neon PostgreSQL URL in the Render dashboard
+
+  # ── Daily arXiv Ingestion Cron Job ────────────────────────────────────────
+  # Runs every day at 6 AM UTC. Fetches the latest cs.AI/LG/CL/CV/NE papers,
+  # embeds them with Jina, upserts vectors to Pinecone, stores metadata in
+  # PostgreSQL, and deletes data older than 90 days to stay within free limits.
+  - type: cron
+    name: daily-arxiv-ingest
+    env: docker
+    dockerfilePath: ./Dockerfile.ingest
+    schedule: "0 6 * * *"   # Every day at 06:00 UTC
+    region: ohio
+    plan: free
+    envVars:
+      - key: VECTOR_DB_PROVIDER
+        value: pinecone
+      - key: PDF_PARSER__USE_LIGHTWEIGHT_PARSER
+        value: "true"
+      - key: PINECONE__API_KEY
+        sync: false
+      - key: PINECONE__INDEX_NAME
+        value: arxiv-papers
+      - key: PINECONE__ENVIRONMENT
+        value: us-east-1
+      - key: JINA_API_KEY
+        sync: false
+      - key: POSTGRES_DATABASE_URL
+        sync: false
+      # Controls which arXiv categories are ingested.
+      # Override in Render dashboard to change without a redeploy.
+      - key: ARXIV_CATEGORIES
+        value: "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV OR cat:cs.NE"
+      # Papers older than this many days are deleted from Pinecone + PostgreSQL
+      - key: INGEST_TTL_DAYS
+        value: "90"
+

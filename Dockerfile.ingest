@@ -1,0 +1,47 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm AS base
+
+WORKDIR /app
+
+# Copy configuration files
+COPY pyproject.toml uv.lock ./
+
+# UV_COMPILE_BYTECODE for generating .pyc files -> faster startup.
+# UV_LINK_MODE=copy to silence warnings about hard links across filesystems.
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+
+# Install only production dependencies (no dev extras).
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=/app/uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=/app/pyproject.toml \
+    uv sync --frozen --no-dev
+
+# Copy application source and scripts
+COPY src /app/src
+COPY scripts /app/scripts
+
+# ── Final slim runtime image ──────────────────────────────────────────────────
+FROM python:3.12.8-slim AS final
+
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
+
+# Runtime system deps (same as the main web Dockerfile)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libxcb1 \
+        libx11-6 \
+        libpq-dev \
+        poppler-utils \
+        tesseract-ocr \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bring in the virtualenv + source from the builder
+COPY --from=base /app /app
+
+# Add venv to PATH so `python` resolves correctly
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Run the ingestion script (Render cron job calls this container once per schedule)
+CMD ["python", "scripts/daily_ingest.py"]
