@@ -4,7 +4,7 @@ import time
 import xml.etree.ElementTree as ET
 from functools import cached_property
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote, urlencode
 
 import httpx
@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 class ArxivClient:
     """Client for fetching papers from arXiv API."""
 
-    def __init__(self, settings: ArxivSettings):
-        self._settings = settings
+    def __init__(self, settings: Any):
+        if hasattr(settings, "arxiv"):
+            self._settings = settings.arxiv
+        else:
+            self._settings = settings
         self._last_request_time: Optional[float] = None
 
     @cached_property

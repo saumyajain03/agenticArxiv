@@ -8,17 +8,18 @@ from typing import List
 # Ensure src/ is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dateutil import parser as date_parser
 from src.config import get_settings
 from src.db.factory import make_database
 from src.repositories.paper import PaperRepository
 from src.services.arxiv.client import ArxivClient
-from src.services.pdf_parser.parser import PDFParserService
+from src.services.pdf_parser.factory import make_pdf_parser_service
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.opensearch.client import OpenSearchClient
 from src.services.embeddings.pinecone_client import PineconeClient
 from src.services.indexing.hybrid_indexer import HybridIndexingService
 from src.services.indexing.text_chunker import TextChunker
-from src.schemas.paper.models import PaperCreate
+from src.schemas.arxiv.paper import PaperCreate
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -28,12 +29,12 @@ logger = logging.getLogger(__name__)
 def serialize_parsed_content(parsed_paper):
     return {
         "pdf_processed": True,
-        "raw_text": parsed_paper.pdf_content.raw_text,
-        "sections": [s.model_dump() for s in parsed_paper.pdf_content.sections],
-        "figures": [f.model_dump() for f in parsed_paper.pdf_content.figures],
-        "tables": [t.model_dump() for t in parsed_paper.pdf_content.tables],
-        "parser_used": parsed_paper.pdf_content.parser_used.value,
-        "parser_metadata": parsed_paper.pdf_content.metadata,
+        "raw_text": parsed_paper.raw_text,
+        "sections": [s.model_dump() for s in parsed_paper.sections],
+        "figures": [f.model_dump() for f in parsed_paper.figures],
+        "tables": [t.model_dump() for t in parsed_paper.tables],
+        "parser_used": parsed_paper.parser_used.value,
+        "parser_metadata": parsed_paper.metadata,
     }
 
 
@@ -49,7 +50,7 @@ async def run_ingestion():
 
     # 2. Check document count to decide daily check vs historical catch-up
     try:
-        paper_count = paper_repo.count()
+        paper_count = paper_repo.get_count()
         logger.info(f"Current database contains {paper_count} papers")
     except Exception as e:
         logger.error(f"Error checking database paper count: {e}")
@@ -75,10 +76,9 @@ async def run_ingestion():
     # 3. Fetch list of papers from arXiv
     arxiv_client = ArxivClient(settings)
     papers = await arxiv_client.fetch_papers(
-        search_query=search_query,
-        start_date=start_date,
-        end_date=now,
         max_results=max_results,
+        from_date=start_date.strftime("%Y%m%d"),
+        to_date=now.strftime("%Y%m%d"),
     )
 
     if not papers:
@@ -111,9 +111,7 @@ async def run_ingestion():
         pinecone_client=pinecone_client,
     )
 
-    # Force lightweight parser for the ingestion cron (saves memory/crashes in CI/Docker)
-    pdf_parser = PDFParserService(settings)
-    pdf_parser.parser.use_lightweight = True
+    pdf_parser = make_pdf_parser_service()
 
     # 5. Process and index each paper
     success_count = 0
@@ -129,9 +127,9 @@ async def run_ingestion():
         parsed_paper = None
         temp_pdf_path = None
         try:
-            temp_pdf_path = await arxiv_client.download_pdf(paper.pdf_url, f"{arxiv_id}.pdf")
+            temp_pdf_path = await arxiv_client.download_pdf(paper)
             if temp_pdf_path:
-                parsed_paper = pdf_parser.parse_pdf(temp_pdf_path)
+                parsed_paper = await pdf_parser.parse_pdf(temp_pdf_path)
         except Exception as e:
             logger.error(f"Failed to parse PDF for {arxiv_id}: {e}")
         finally:
@@ -172,8 +170,8 @@ async def run_ingestion():
                     "authors": paper.authors,
                     "abstract": paper.abstract,
                     "categories": paper.categories,
-                    "raw_text": parsed_paper.pdf_content.raw_text,
-                    "sections": [{"title": s.title, "content": s.content} for s in parsed_paper.pdf_content.sections],
+                    "raw_text": parsed_paper.raw_text,
+                    "sections": [{"title": s.title, "content": s.content} for s in parsed_paper.sections],
                     "published_date": parse_date(paper.published_date),
                 }
 
