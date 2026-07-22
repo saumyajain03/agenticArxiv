@@ -2,49 +2,70 @@ name: Daily arXiv Paper Ingestion
 
 on:
   schedule:
-    # Run once every 24 hours at 6:00 AM UTC
+    # Runs every day at 6:00 AM UTC (~11:30 AM IST)
     - cron: '0 6 * * *'
   workflow_dispatch:
-    # Allows manual trigger of the pipeline from the GitHub UI
+    # Allows you to trigger manually from GitHub → Actions tab anytime
 
 jobs:
   ingest:
-    name: Check and Index Daily Papers
+    name: Fetch & Index Daily arXiv Papers
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # Kill the job if it hangs for any reason
 
     steps:
-      - name: Checkout Code
+      # ── 1. Get the code ────────────────────────────────────────────────────
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      # ── 2. Install system libraries needed by PDF parsers ──────────────────
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libxcb1 libx11-6 libpq-dev \
+            poppler-utils tesseract-ocr \
+            libgl1 libglib2.0-0
+
+      # ── 3. Set up Python + uv ──────────────────────────────────────────────
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
         with:
-          python-version: '3.12'
+          version: "latest"
 
-      - name: Install UV Package Manager
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Set up Python 3.12
+        run: uv python install 3.12
 
+      # ── 4. Install project dependencies (cached for speed) ─────────────────
       - name: Install Project Dependencies
-        run: |
-          uv sync --frozen
+        run: uv sync --frozen --no-dev
 
-      - name: Run Daily Ingestion Script
+      # ── 5. Run the ingestion + cleanup pipeline ────────────────────────────
+      - name: Run Daily Ingestion
         env:
-          # Database Connection
+          # ── PostgreSQL (Neon) ──────────────────────────────────────────────
           POSTGRES_DATABASE_URL: ${{ secrets.POSTGRES_DATABASE_URL }}
-          
-          # Vector Store Provider & API Keys
+
+          # ── Vector database ────────────────────────────────────────────────
           VECTOR_DB_PROVIDER: pinecone
           PINECONE__API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE__INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
-          PINECONE__ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
-          
-          # Embedding API Key
+          PINECONE__INDEX_NAME: arxiv-papers
+          PINECONE__ENVIRONMENT: us-east-1
+
+          # ── Embeddings ─────────────────────────────────────────────────────
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
-          
-          # Lightweight parser config
+
+          # ── Ingestion config ───────────────────────────────────────────────
+          # Which arXiv categories to fetch (edit here to change without secrets)
+          ARXIV_CATEGORIES: "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV OR cat:cs.NE"
+          # Delete papers + vectors older than this many days (keeps DBs lean)
+          INGEST_TTL_DAYS: "90"
+
+          # ── Parser ─────────────────────────────────────────────────────────
+          # Use lightweight PDF parser — faster and sufficient for GitHub Actions
           PDF_PARSER__USE_LIGHTWEIGHT_PARSER: "true"
+
         run: |
+          echo "Starting daily arXiv ingestion..."
           uv run python scripts/daily_ingest.py
+          echo "Ingestion complete."
